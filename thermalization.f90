@@ -1,13 +1,15 @@
 program thermalization
  implicit none
 
+ real, parameter :: pi = acos(-1.0)
  real dt, dx, dz
- real gs_sigma, many_sigma_sqr, gauss_denom
+ real gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
  integer nt, nx, nz
  integer max_sort
 
  real, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
- real, dimension(:,:,:,:,:), allocatable :: jBmu, jSmu, umu ! mu, sort, t,x,z
+ real, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
+ real, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
  real, dimension(:,:), allocatable :: total_p ! mu, t
  integer, dimension(:), allocatable :: total_B, total_S !t
 
@@ -20,6 +22,7 @@ program thermalization
  gs_sigma = 1.0
  many_sigma_sqr = 4 * 4 * gs_sigma * gs_sigma
  gauss_denom = 2 * gs_sigma * gs_sigma
+ gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
 
  call init_arrays()
  call Tmn_from_f14('test.f14')
@@ -30,8 +33,8 @@ contains
 subroutine init_arrays()
   allocate(Tmn(0:3, 0:3, 1:max_sort,  1:nt, 0:nx, 0:nz))
   allocate(TmnL(0:3, 0:3, 1:max_sort,  1:nt, 0:nx, 0:nz))
-  allocate(jBmu(0:3, 1:max_sort,  1:nt, 0:nx, 0:nz))
-  allocate(jSmu(0:3, 1:max_sort,  1:nt, 0:nx, 0:nz))
+  allocate(jBmu(0:3,  1:nt, 0:nx, 0:nz))
+  allocate(jSmu(0:3,  1:nt, 0:nx, 0:nz))
   allocate(umu(0:3, 1:max_sort,  1:nt, 0:nx, 0:nz))
   allocate(total_p(0:3, 1:nt))
   allocate(total_B(1:nt))
@@ -50,7 +53,7 @@ end subroutine
 subroutine Tmn_from_f14(fname)
  character(len=*), intent(in) :: fname
  real Elab, r(0:3), p(0:3), m, dr(1:3), sf, upart(0:3)
- integer tsteps, ev, Npart, i, ityp, i3, sort, Bpart, Spart
+ integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart
  integer it, ix, iz
 
  open(unit = 14, file = 'test.f14')
@@ -87,8 +90,10 @@ subroutine Tmn_from_f14(fname)
            Tmn(0:3, nu, sort, it, ix, iz) = Tmn(0:3, nu, sort, it, ix, iz) +&
                                             upart(0:3) * p(nu) * sf
          end do
-         jBmu(0:3) = jBmu(0:3) + upart(0:3) * sf * Bpart
-         jSmu(0:3) = jSmu(0:3) + upart(0:3) * sf * Spart
+         jBmu(0:3, it, ix, iz) = jBmu(0:3, it, ix, iz) +&
+                                       upart(0:3) * sf * Bpart
+         jSmu(0:3, it, ix, iz) = jSmu(0:3, it, ix, iz) +&
+                                       upart(0:3) * sf * Spart
        end do; end do ! end loop over space grid
      end do
    end do
@@ -99,7 +104,14 @@ end subroutine
 
 real function smearing_factor(dr, p)
   real, intent(in) :: dr(1:3), p(0:3)
-  smearing_factor = 1.0 !dummy return, TODO: write the function
+  real gam_inv, bet(1:3), tmp, dr_RF(1:3), dr_RF_sqr
+
+  bet(1:3) = p(1:3)/p(0)
+  gam_inv = sqrt(1 - bet(1)*bet(1) - bet(2)*bet(2) - bet(3)*bet(3))
+  tmp = (bet(1)*dr(1) + bet(2)*dr(2) + bet(3)*dr(3))/gam_inv/(1.0 + gam_inv)
+  dr_RF(1:3) = dr(1:3) + tmp * bet(1:3)
+  dr_RF_sqr = dr_RF(1)*dr_RF(1) + dr_RF(2)*dr_RF(2) + dr_RF(3)*dr_RF(3)
+  smearing_factor = gauss_norm * exp(-dr_RF_sqr/gauss_denom)
 end function smearing_factor
 
 subroutine print_conserved(fname)
