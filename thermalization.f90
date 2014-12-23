@@ -1,26 +1,26 @@
 program thermalization
  implicit none
 
- double precision, parameter :: pi = dacos(-1.d0)
- double precision dt, dx, dz
- double precision gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
+ real, parameter :: pi = acos(-1.0)
+ real dt, dx, dz
+ real gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
  integer nt, nx, nz
  integer max_sort
 
- double precision, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
- double precision, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
- double precision, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
- double precision, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
- double precision, dimension(:,:), allocatable :: total_p ! mu, t
+ real, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
+ real, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
+ real, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
+ real, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
+ real, dimension(:,:), allocatable :: total_p ! mu, t
  integer, dimension(:), allocatable :: total_B, total_S !t
 
  max_sort = 7
- dx = 1.d0
- dz = 1.d0
+ dx = 1.0
+ dz = 1.0
  nt = 10
  nx = 10
  nz = 10
- gs_sigma = 1.d0
+ gs_sigma = 1.0
  many_sigma_sqr = 4 * 4 * gs_sigma * gs_sigma
  gauss_denom = 2 * gs_sigma * gs_sigma
  gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
@@ -29,7 +29,7 @@ program thermalization
  call Tmn_from_f14('/scratch/hyihp/oliiny/UrQMD_check/urqmd-3.4/test.f14')
  call print_conserved('conserved_quantities.txt')
  call print_Tmn('Tmn.txt', .False., 4, 0) ! FALSE - comp. frame
- call get_Landau_Tmn()
+! call get_Landau_Tmn()
  call print_Tmn('TmnL.txt', .True., 4, 0) ! TRUE - Landau RF
  call print_collective_velocities('v_collective.txt', 4, 0)
  call delete_arrays_from_memory()
@@ -46,16 +46,16 @@ subroutine init_arrays()
   allocate(total_p(0:3, 1:nt))
   allocate(total_B(1:nt))
   allocate(total_S(1:nt))
-  Tmn     = 0.d0
-  TmnL    = 0.d0
-  jBmu    = 0.d0
-  jSmu    = 0.d0
-  jmu     = 0.d0
-  total_p(0:3,:) = 0.d0
+  Tmn     = 0.0
+  TmnL    = 0.0
+  jBmu    = 0.0
+  jSmu    = 0.0
+  jmu     = 0.0
+  total_p(0:3,:) = 0.0
   total_B(:) = 0
   total_S(:) = 0
-  umu(0,:,:,:,:) = 1.d0
-  umu(1:3,:,:,:,:) = 0.d0
+  umu(0,:,:,:,:) = 1.0
+  umu(1:3,:,:,:,:) = 0.0
 end subroutine
 
 subroutine delete_arrays_from_memory()
@@ -70,25 +70,25 @@ subroutine delete_arrays_from_memory()
   deallocate(total_S)
 end subroutine
 
-subroutine get_Landau_Tmn()
- use Land_Eck, only: FindLandau
- implicit none
-
- integer it, sort, ix, iz
- do it = 1, nt
-   do sort = 0, max_sort
-     do ix = 0, nx; do iz = 0, nz
-       call FindLandau( Tmn(0:3, 0:3, sort, it, ix, iz),&
-                       TmnL(0:3, 0:3, sort, it, ix, iz),&
-                       umu(0:3, sort, it, ix, iz))
-     end do; end do
-   end do
- end do
-end subroutine
+!subroutine get_Landau_Tmn()
+! use Land_Eck, only: FindLandau
+! implicit none
+!
+! integer it, sort, ix, iz
+! do it = 1, nt
+!   do sort = 0, max_sort
+!     do ix = 0, nx; do iz = 0, nz
+!       call FindLandau( Tmn(0:3, 0:3, sort, it, ix, iz),&
+!                       TmnL(0:3, 0:3, sort, it, ix, iz),&
+!                       umu(0:3, sort, it, ix, iz))
+!     end do; end do
+!   end do
+! end do
+!end subroutine
 
 subroutine Tmn_from_f14(fname)
  character(len=*), intent(in) :: fname
- double precision Elab, r(0:3), p(0:3), m, dr(1:3), sf, upart(0:3)
+ real Elab, r(0:3), p(0:3), m, dr(1:3), sf, upart(0:3)
  integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart, io
  integer it, ix, iz
 
@@ -103,33 +103,21 @@ subroutine Tmn_from_f14(fname)
      read(14,*)
      do i = 1, Npart
 
-       read(14,'(9e16.8,i11,i3)', iostat = io) r(0:3), p(0:3), m, ityp, i3
+       read(14,*, iostat = io) r(0:3), p(0:3), m, ityp, i3
        if (io .ne. 0) then
          print *, "error reading file, io = ", io, " ev = ", ev, " i = ", i
        endif
 
        if (it > nt) then; cycle; endif
-       ! General analysis
-       sort = get_sort(ityp)
        Bpart = BfromItyp(ityp)
        Spart = SfromItyp(ityp)
        total_p(0:3, it) = total_p(0:3, it) + p(0:3)
        total_B(it) = total_B(it) + Bpart
        total_S(it) = total_S(it) + Spart
 
-       jBmu(0:3, it, ix, iz) = jBmu(0:3, it, ix, iz) +&
-                                     upart(0:3) * sf * Bpart
-       jSmu(0:3, it, ix, iz) = jSmu(0:3, it, ix, iz) +&
-                                     upart(0:3) * sf * Spart
-       jmu(0:3, 0, it, ix, iz) = jmu(0:3, 0, it, ix, iz) +&
-                                     upart(0:3) * sf
-       do nu = 0,3
-         Tmn(0:3, nu, 0, it, ix, iz) = Tmn(0:3, nu, 0, it, ix, iz) +&
-                                       upart(0:3) * p(nu) * sf
-       end do
+       upart(0) = 1.0
+       upart(1:3) = p(1:3)/p(0)
 
-       ! Sort specific analysis
-       if (sort < 0) then; cycle; endif
        do ix = 0, nx; do iz = 0, nz ! loop over space grid
          ! dr - comp. frame vector from grid point to particle
          dr(1) = r(1) - ix * dx
@@ -137,14 +125,28 @@ subroutine Tmn_from_f14(fname)
          dr(3) = r(3) - iz * dz
          if (too_far(dr(1:3))) then; cycle; endif
          sf = smearing_factor(dr(1:3), p(0:3))
-         upart(0) = 1.0
-         upart(1:3) = p(1:3)/p(0)
-         jmu(0:3, sort, it, ix, iz) = jmu(0:3, sort, it, ix, iz) +&
-                                          upart(0:3) * sf
+
+         jBmu(0:3, it, ix, iz) = jBmu(0:3, it, ix, iz) +&
+                                       upart(0:3) * sf * Bpart
+         jSmu(0:3, it, ix, iz) = jSmu(0:3, it, ix, iz) +&
+                                       upart(0:3) * sf * Spart
+         jmu(0:3, 0, it, ix, iz) = jmu(0:3, 0, it, ix, iz) +&
+                                       upart(0:3) * sf
          do nu = 0,3
-           Tmn(0:3, nu, sort, it, ix, iz) = Tmn(0:3, nu, sort, it, ix, iz) +&
-                                            upart(0:3) * p(nu) * sf
+           Tmn(0:3, nu, 0, it, ix, iz) = Tmn(0:3, nu, 0, it, ix, iz) +&
+                                         upart(0:3) * p(nu) * sf
          end do
+
+         ! Sort specific analysis
+         sort = get_sort(ityp)
+         if (sort > 0) then
+           jmu(0:3, sort, it, ix, iz) = jmu(0:3, sort, it, ix, iz) +&
+                                            upart(0:3) * sf
+           do nu = 0,3
+             Tmn(0:3, nu, sort, it, ix, iz) = Tmn(0:3, nu, sort, it, ix, iz) +&
+                                              upart(0:3) * p(nu) * sf
+           end do
+         endif ! end sort specific analysis
        end do; end do ! end loop over space grid
      end do
    end do
@@ -161,9 +163,9 @@ subroutine Tmn_from_f14(fname)
 
 end subroutine
 
-double precision function smearing_factor(dr, p)
-  double precision, intent(in) :: dr(1:3), p(0:3)
-  double precision gam_inv, bet(1:3), tmp, dr_RF(1:3), dr_RF_sqr
+real function smearing_factor(dr, p)
+  real, intent(in) :: dr(1:3), p(0:3)
+  real gam_inv, bet(1:3), tmp, dr_RF(1:3), dr_RF_sqr
 
   bet(1:3) = p(1:3)/p(0)
   gam_inv = sqrt(1 - bet(1)*bet(1) - bet(2)*bet(2) - bet(3)*bet(3))
@@ -190,7 +192,7 @@ subroutine print_collective_velocities(fname, ix, iz)
   integer, intent(in) :: ix, iz
   integer it, sort
   character(len=12)sname
-  double precision u_hlp(0:3)
+  real u_hlp(0:3)
 
   open(unit = 8, file = fname)
   write(8,'(2(A,f5.1))')"# Collective velocities of particles at x = ",&
@@ -212,7 +214,7 @@ subroutine print_Tmn(fname, landau, ix, iz)
   logical, intent(in) :: landau
   integer, intent(in) :: ix, iz
   integer it, sort, mu, nu
-  double precision T_hlp(0:3,0:3)
+  real T_hlp(0:3,0:3)
   character(len=12)sname
 
   open(unit = 8, file = fname)
@@ -275,7 +277,7 @@ subroutine get_sort_name(sort, sname)
 end subroutine
 
 logical function too_far(dr)
-  double precision, intent(in) :: dr(1:3)
+  real, intent(in) :: dr(1:3)
   if (dr(1)*dr(1) + dr(2)*dr(2) + dr(3)*dr(3) > many_sigma_sqr) then
     too_far = .TRUE.
   else
@@ -291,7 +293,7 @@ logical function read_f14_event_header(uread, Elab, ev, tsteps, dt)
   ! tsteps - number of output moments per event in f14
   ! dt - time difference between output moments
   integer, intent(in) :: uread
-  double precision, intent(out) :: Elab, dt
+  real, intent(out) :: Elab, dt
   integer, intent(out) :: tsteps, ev
 
   character testchar
