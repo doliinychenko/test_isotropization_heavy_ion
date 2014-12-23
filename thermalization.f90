@@ -1,26 +1,26 @@
 program thermalization
  implicit none
 
- real, parameter :: pi = acos(-1.0)
- real dt, dx, dz
- real gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
+ double precision, parameter :: pi = dacos(-1.d0)
+ double precision dt, dx, dz
+ double precision gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
  integer nt, nx, nz
  integer max_sort
 
- real, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
- real, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
- real, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
- real, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
- real, dimension(:,:), allocatable :: total_p ! mu, t
+ double precision, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
+ double precision, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
+ double precision, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
+ double precision, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
+ double precision, dimension(:,:), allocatable :: total_p ! mu, t
  integer, dimension(:), allocatable :: total_B, total_S !t
 
  max_sort = 7
- dx = 1.0
- dz = 1.0
+ dx = 1.d0
+ dz = 1.d0
  nt = 10
  nx = 10
  nz = 10
- gs_sigma = 1.0
+ gs_sigma = 1.d0
  many_sigma_sqr = 4 * 4 * gs_sigma * gs_sigma
  gauss_denom = 2 * gs_sigma * gs_sigma
  gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
@@ -29,7 +29,7 @@ program thermalization
  call Tmn_from_f14('/scratch/hyihp/oliiny/UrQMD_check/urqmd-3.4/test.f14')
  call print_conserved('conserved_quantities.txt')
  call print_Tmn('Tmn.txt', .False., 4, 0) ! FALSE - comp. frame
-! call get_Landau_Tmn()
+ call get_Landau_Tmn()
  call print_Tmn('TmnL.txt', .True., 4, 0) ! TRUE - Landau RF
  call print_collective_velocities('v_collective.txt', 4, 0)
  call delete_arrays_from_memory()
@@ -46,16 +46,16 @@ subroutine init_arrays()
   allocate(total_p(0:3, 1:nt))
   allocate(total_B(1:nt))
   allocate(total_S(1:nt))
-  Tmn     = 0.0
-  TmnL    = 0.0
-  jBmu    = 0.0
-  jSmu    = 0.0
-  jmu     = 0.0
-  total_p(0:3,:) = 0.0
+  Tmn     = 0.d0
+  TmnL    = 0.d0
+  jBmu    = 0.d0
+  jSmu    = 0.d0
+  jmu     = 0.d0
+  total_p(0:3,:) = 0.d0
   total_B(:) = 0
   total_S(:) = 0
-  umu(0,:,:,:,:) = 1.0
-  umu(1:3,:,:,:,:) = 0.0
+  umu(0,:,:,:,:) = 1.d0
+  umu(1:3,:,:,:,:) = 0.d0
 end subroutine
 
 subroutine delete_arrays_from_memory()
@@ -70,25 +70,25 @@ subroutine delete_arrays_from_memory()
   deallocate(total_S)
 end subroutine
 
-!subroutine get_Landau_Tmn()
-! use Land_Eck, only: FindLandau
-! implicit none
-!
-! integer it, sort, ix, iz
-! do it = 1, nt
-!   do sort = 0, max_sort
-!     do ix = 0, nx; do iz = 0, nz
-!       call FindLandau( Tmn(0:3, 0:3, sort, it, ix, iz),&
-!                       TmnL(0:3, 0:3, sort, it, ix, iz),&
-!                       umu(0:3, sort, it, ix, iz))
-!     end do; end do
-!   end do
-! end do
-!end subroutine
+subroutine get_Landau_Tmn()
+ use Land_Eck, only: FindLandau
+ implicit none
+
+ integer it, sort, ix, iz
+ do it = 1, nt
+   do sort = 0, max_sort
+     do ix = 0, nx; do iz = 0, nz
+       call FindLandau( Tmn(0:3, 0:3, sort, it, ix, iz),&
+                       TmnL(0:3, 0:3, sort, it, ix, iz),&
+                       umu(0:3, sort, it, ix, iz))
+     end do; end do
+   end do
+ end do
+end subroutine
 
 subroutine Tmn_from_f14(fname)
  character(len=*), intent(in) :: fname
- real Elab, r(0:3), p(0:3), m, dr(1:3), sf, upart(0:3)
+ double precision Elab, r(0:3), p(0:3), m, dr(1:3), sf, upart(0:3)
  integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart, io
  integer it, ix, iz
 
@@ -115,7 +115,7 @@ subroutine Tmn_from_f14(fname)
        total_B(it) = total_B(it) + Bpart
        total_S(it) = total_S(it) + Spart
 
-       upart(0) = 1.0
+       upart(0) = 1.d0
        upart(1:3) = p(1:3)/p(0)
 
        do ix = 0, nx; do iz = 0, nz ! loop over space grid
@@ -163,13 +163,13 @@ subroutine Tmn_from_f14(fname)
 
 end subroutine
 
-real function smearing_factor(dr, p)
-  real, intent(in) :: dr(1:3), p(0:3)
-  real gam_inv, bet(1:3), tmp, dr_RF(1:3), dr_RF_sqr
+double precision function smearing_factor(dr, p)
+  double precision, intent(in) :: dr(1:3), p(0:3)
+  double precision gam_inv, bet(1:3), tmp, dr_RF(1:3), dr_RF_sqr
 
   bet(1:3) = p(1:3)/p(0)
   gam_inv = sqrt(1 - bet(1)*bet(1) - bet(2)*bet(2) - bet(3)*bet(3))
-  tmp = (bet(1)*dr(1) + bet(2)*dr(2) + bet(3)*dr(3))/gam_inv/(1.0 + gam_inv)
+  tmp = (bet(1)*dr(1) + bet(2)*dr(2) + bet(3)*dr(3))/gam_inv/(1.d0 + gam_inv)
   dr_RF(1:3) = dr(1:3) + tmp * bet(1:3)
   dr_RF_sqr = dr_RF(1)*dr_RF(1) + dr_RF(2)*dr_RF(2) + dr_RF(3)*dr_RF(3)
   smearing_factor = gauss_norm * exp(-dr_RF_sqr/gauss_denom)
@@ -192,7 +192,7 @@ subroutine print_collective_velocities(fname, ix, iz)
   integer, intent(in) :: ix, iz
   integer it, sort
   character(len=12)sname
-  real u_hlp(0:3)
+  double precision u_hlp(0:3)
 
   open(unit = 8, file = fname)
   write(8,'(2(A,f5.1))')"# Collective velocities of particles at x = ",&
@@ -214,7 +214,7 @@ subroutine print_Tmn(fname, landau, ix, iz)
   logical, intent(in) :: landau
   integer, intent(in) :: ix, iz
   integer it, sort, mu, nu
-  real T_hlp(0:3,0:3)
+  double precision T_hlp(0:3,0:3)
   character(len=12)sname
 
   open(unit = 8, file = fname)
@@ -277,7 +277,7 @@ subroutine get_sort_name(sort, sname)
 end subroutine
 
 logical function too_far(dr)
-  real, intent(in) :: dr(1:3)
+  double precision, intent(in) :: dr(1:3)
   if (dr(1)*dr(1) + dr(2)*dr(2) + dr(3)*dr(3) > many_sigma_sqr) then
     too_far = .TRUE.
   else
@@ -293,7 +293,7 @@ logical function read_f14_event_header(uread, Elab, ev, tsteps, dt)
   ! tsteps - number of output moments per event in f14
   ! dt - time difference between output moments
   integer, intent(in) :: uread
-  real, intent(out) :: Elab, dt
+  double precision, intent(out) :: Elab, dt
   integer, intent(out) :: tsteps, ev
 
   character testchar
