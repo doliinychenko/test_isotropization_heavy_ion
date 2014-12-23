@@ -25,8 +25,9 @@ program thermalization
  gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
 
  call init_arrays()
- call Tmn_from_f14('test.f14')
+ call Tmn_from_f14('/scratch/hyihp/oliiny/UrQMD_check/urqmd-3.4/test.f14')
  call print_conserved('conserved_quantities.txt')
+ call print_Tmn('Tmn.txt', .FALSE., 0, 0) ! TRUE - Landau RF, FALSE - comp. frame
 
 contains
 
@@ -56,7 +57,7 @@ subroutine Tmn_from_f14(fname)
  integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart
  integer it, ix, iz
 
- open(unit = 14, file = 'test.f14')
+ open(unit = 14, file = fname)
  do ! event cycle
    if (.not. read_f14_event_header(14, Elab, ev, tsteps, dt)) then
      exit
@@ -69,7 +70,7 @@ subroutine Tmn_from_f14(fname)
        read(14,*) r(0:3), p(0:3), m, ityp, i3
        if (it > nt) then; cycle; endif
        ! Analysis
-       sort = get_sort(ityp, i3)
+       sort = get_sort(ityp)
        Bpart = BfromItyp(ityp)
        Spart = SfromItyp(ityp)
        total_p(0:3, it) = total_p(0:3, it) + p(0:3)
@@ -77,7 +78,7 @@ subroutine Tmn_from_f14(fname)
        total_S(it) = total_S(it) + Spart
 
        if (sort < 0) then; cycle; endif
-       do ix = 1, nx; do iz = 1, nz ! loop over space grid
+       do ix = 0, nx; do iz = 0, nz ! loop over space grid
          ! dr - comp. frame vector from grid point to particle
          dr(1) = r(1) - ix * dx
          dr(2) = r(2)
@@ -100,6 +101,11 @@ subroutine Tmn_from_f14(fname)
  end do ! end event cycle
  close(14)
 
+ ! Normalize to number of events
+ Tmn = Tmn / ev
+ jBmu = jBmu / ev
+ jSmu = jSmu / ev
+
 end subroutine
 
 real function smearing_factor(dr, p)
@@ -115,7 +121,7 @@ real function smearing_factor(dr, p)
 end function smearing_factor
 
 subroutine print_conserved(fname)
-  character(len=*) fname
+  character(len=*), intent(in) :: fname
   integer it
 
   open(unit = 8, file = fname)
@@ -126,8 +132,49 @@ subroutine print_conserved(fname)
   close(8)
 end subroutine
 
-integer function get_sort(ityp, i3)
-  integer, intent(in) :: ityp, i3
+subroutine print_Tmn(fname, landau, ix, iz)
+  character(len=*), intent(in) :: fname
+  logical, intent(in) :: landau
+  integer, intent(in) :: ix, iz
+  integer it, sort, mu, nu
+  real T_hlp(0:3,0:3)
+
+  open(unit = 8, file = fname)
+  if (landau) then
+    write(8,*)"# Tmn in Landau rest frame at x = ", ix*dx, ", z = ", iz*dz
+  else
+    write(8,*)"# Tmn in computational frame at x = ", ix*dx, ", z = ", iz*dz
+  endif
+
+  do sort = 1, 7
+    select case(sort)
+      case (1); write(8,*)"# pions"
+      case (2); write(8,*)"# kaons"
+      case (3); write(8,*)"# rhos"
+      case (4); write(8,*)"# nucleons"
+      case (5); write(8,*)"# Deltas"
+      case (6); write(8,*)"# Lambdas"
+      case (7); write(8,*)"# etas"
+      case default; write(8,*)"error: unknown sort ", sort
+    end select
+    do it = 1, nt
+      write(8,*)"t = ", it*dt
+      if (landau) then
+        T_hlp(0:3,0:3) = TmnL(0:3,0:3, sort, it, ix, iz)
+      else
+        T_hlp(0:3,0:3) = Tmn(0:3,0:3, sort, it, ix, iz)
+      endif
+      do mu = 0, 3
+        write(8,'(4f10.4)') (T_hlp(mu,nu), nu = 0,3)
+      end do
+      write(8,*)
+    end do
+  end do
+  close(8)
+end subroutine
+
+integer function get_sort(ityp)
+  integer, intent(in) :: ityp
   select case(ityp)
     case (101); get_sort = 1 ! pions
     case (106); get_sort = 2 ! kaons
