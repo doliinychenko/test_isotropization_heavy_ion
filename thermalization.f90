@@ -89,7 +89,7 @@ end subroutine
 subroutine Tmn_from_f14(fname)
  character(len=*), intent(in) :: fname
  double precision Elab, r(0:3), p(0:3), m, dr(1:3), sf, upart(0:3)
- integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart
+ integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart, io
  integer it, ix, iz
 
  open(unit = 14, file = fname)
@@ -100,10 +100,14 @@ subroutine Tmn_from_f14(fname)
    print *, "Event number: ", ev, " Elab[AGeV]: ", Elab, "tsteps: ", tsteps
    do it = 1, tsteps
      read(14,*) Npart
-     print *, "Npart: ", Npart
      read(14,*)
      do i = 1, Npart
-       read(14,*) r(0:3), p(0:3), m, ityp, i3
+
+       read(14,'(9e16.8,i11,i3)', iostat = io) r(0:3), p(0:3), m, ityp, i3
+       if (io .ne. 0) then
+         print *, "error reading file, io = ", io, " ev = ", ev, " i = ", i
+       endif
+
        if (it > nt) then; cycle; endif
        ! General analysis
        sort = get_sort(ityp)
