@@ -32,6 +32,11 @@ program thermalization
  call get_Landau_Tmn()
  call print_Tmn('TmnL.txt', .True., 4, 0) ! TRUE - Landau RF
  call print_collective_velocities('v_collective.txt', 4, 0)
+ call print_vtk_map('vtk/edens.vtk', "energy_density")
+ call print_vtk_map('vtk/dens.vtk',  "density")
+ call print_vtk_map('vtk/p.vtk',     "average_pressure")
+ call print_vtk_map('vtk/x.vtk',     "pressure_asymetry_x")
+ call print_vtk_map('vtk/y.vtk',     "off_diagonalilty_measure_y")
  call delete_arrays_from_memory()
 
 contains
@@ -185,6 +190,72 @@ subroutine print_conserved(fname)
     write(8,*) it*dt, total_p(0:3, it), total_B(it), total_S(it)
   end do
   close(8)
+end subroutine
+
+subroutine print_vtk_map(fname, variable_to_print)
+  use Land_Eck, only: EuclidProduct
+  character(len=*), intent(in) :: fname, variable_to_print
+  character(len=4) s_hlp
+  integer it, ix, iz
+  double precision var, px, py, pz
+
+  do it = 1, nt
+    write(s_hlp,'(i4)')it
+    open(unit = 8, file = fname//"."//trim(adjustl(s_hlp)))
+    write(8,'(A)')"# vtk DataFile Version 2.0"
+    write(8,'(A)')variable_to_print
+    write(8,'(A)')"ASCII"
+    write(8,'(A)')"DATASET STRUCTURED_POINTS"
+    write(8,'(A11,3I5)')"DIMENSIONS ", nx+1, 1, nz+1
+    write(8,'(A8,3I5)')"SPACING ", 1, 1, 1
+    write(8,'(A7,3I5)')"ORIGIN ", 0, 0, 0
+    write(8,'(A,I8)')"POINT_DATA", (nx+1) * (nz+1)
+    write(8,'(A,A,A)')"SCALARS ", variable_to_print, " float 1"
+    write(8,'(A)')"LOOKUP_TABLE default"
+
+    do iz = 0, nz
+      do ix = 0, nx
+        select case(variable_to_print)
+          case ("energy_density")
+            var = TmnL(0,0,0,it,ix,iz)
+          case ("average_pressure")
+            px = TmnL(1,1,0,it,ix,iz)
+            py = TmnL(2,2,0,it,ix,iz)
+            pz = TmnL(3,3,0,it,ix,iz)
+            var = (px + py + pz) / 3.d0
+          case ("density")
+            var = EuclidProduct(jmu(0:3,0,it,ix,iz), umu(0:3,0,it,ix,iz))
+          case ("pressure_asymetry_x")
+            px = TmnL(1,1,0,it,ix,iz)
+            py = TmnL(2,2,0,it,ix,iz)
+            pz = TmnL(3,3,0,it,ix,iz)
+            if (px + py + pz > 1.d-9) then
+              var = (abs(px-py) +abs(py-pz) + abs(pz-px))/(px + py + pz)
+            else
+              var = 0.d0
+            endif
+          case ("off_diagonalilty_measure_y")
+            px = TmnL(1,1,0,it,ix,iz)
+            py = TmnL(2,2,0,it,ix,iz)
+            pz = TmnL(3,3,0,it,ix,iz)
+            if (px + py + pz > 1.d-9) then
+              var = ( abs(TmnL(1,2,0,it,ix,iz)) + &
+                      abs(TmnL(1,3,0,it,ix,iz)) + &
+                      abs(TmnL(2,3,0,it,ix,iz)) &
+                    ) / (px + py + pz) * 3.d0
+            else
+              var = 0.d0
+            endif
+          case default
+            print *,"Wrong variable to write to vtk: ", variable_to_print
+        end select
+        write(8,'(f10.4)', advance = 'no') var
+      end do
+      write(8,*)
+    end do
+    close(8)
+  end do
+
 end subroutine
 
 subroutine print_collective_velocities(fname, ix, iz)
