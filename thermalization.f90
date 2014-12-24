@@ -17,7 +17,7 @@ program thermalization
  max_sort = 7
  dx = 1.d0
  dz = 1.d0
- nt = 10
+ nt = 20
  nx = 10
  nz = 10
  gs_sigma = 1.d0
@@ -26,7 +26,7 @@ program thermalization
  gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
 
  call init_arrays()
- call Tmn_from_f14('/scratch/hyihp/oliiny/UrQMD_check/urqmd-3.4/test.f14')
+ call Tmn_from_f14('/scratch/hyihp/oliiny/therm_project/urqmd_2588082/urqmd-3.4/test.f14')
  call print_conserved('conserved_quantities.txt')
  call print_Tmn('Tmn.txt', .False., 4, 0) ! FALSE - comp. frame
  call get_Landau_Tmn()

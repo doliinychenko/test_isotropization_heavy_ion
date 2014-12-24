@@ -90,6 +90,11 @@ implicit none
  integer mu, ierr, nu, nmax
  logical low_acc
 
+ if (abs(maxval(T)) < 1.d-16 .and. abs(minval(T)) < 1.d-16) then
+   T_b = 0.d0; u(1) = 1.d0; u(2:4) = 0.d0
+   return
+ endif
+
  gmn=0.d0; gmn(1,1)=1.d0; do mu=2,4; gmn(mu,mu)=-1.d0; end do
  hlp=matmul(gmn,T)
 
@@ -117,10 +122,8 @@ implicit none
  maxv=-1.d12; do mu=1,4; if (eigRe(mu)>maxv) then; maxv=eigRe(mu); nmax=mu; endif; end do
 
  if (abs(eigRe(nmax))<1.d-9) then
-   print *, "FindLandau: very small eigen value - ", eigRe(nmax)
-   T_b = 0.d0
-   u = 0.d0
-   u(1) = 1.d0
+   ! print *, "FindLandau: very small eigen value - ", eigRe(nmax)
+   T_b = 0.d0;  u(2:4) = 0.d0;  u(1) = 1.d0
  else
    call NormalizeTo4Vel(eiv(1:4,nmax),u,"FindLandau")
    call BoostTensor(u,T,T_b)
