@@ -6,6 +6,9 @@ program thermalization
  double precision gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
  integer nt, nx, nz
  integer max_sort
+ integer total_ev, total_files
+ integer i_file
+ character*300 particle_file, datafile_alias
 
  double precision, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
@@ -13,20 +16,43 @@ program thermalization
  double precision, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
  double precision, dimension(:,:), allocatable :: total_p ! mu, t
  integer, dimension(:), allocatable :: total_B, total_S !t
+ logical load_from_saved
 
- max_sort = 7
- dx = 1.d0
- dz = 1.d0
- nt = 20
- nx = 10
- nz = 10
- gs_sigma = 1.d0
- many_sigma_sqr = 4 * 4 * gs_sigma * gs_sigma
- gauss_denom = 2 * gs_sigma * gs_sigma
- gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
+ load_from_saved = .True.
 
- call init_arrays()
- call Tmn_from_f14('/scratch/hyihp/oliiny/therm_project/urqmd_2588082/urqmd-3.4/test.f14')
+ if (.not. load_from_saved) then
+   total_ev = 0
+   max_sort = 7
+   dx = 1.d0
+   dz = 1.d0
+   nt = 20
+   nx = 10
+   nz = 10
+   gs_sigma = 1.d0
+   many_sigma_sqr = 4 * 4 * gs_sigma * gs_sigma
+   gauss_denom = 2 * gs_sigma * gs_sigma
+   gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
+
+   call init_arrays()
+   datafile_alias = '/scratch/hyihp/oliiny/UrQMD_check/urqmd-3.4/test.f14'
+                    !'/scratch/hyihp/oliiny/therm_project/urqmd_*/urqmd-3.4/test.f14'
+   call system('ls '//trim(datafile_alias)//'|wc -l > file_list.txt')
+   call system('ls '//trim(datafile_alias)//' >> file_list.txt')
+
+   open(unit = 20, file = 'file_list.txt')
+   read(20,*)total_files
+   print *,"Total files: ", total_files
+   do i_file = 1, total_files
+     read(20,'(A)') particle_file
+     call Tmn_from_f14(trim(adjustl(particle_file)))
+   end do
+   close(20)
+   call normalize_to_event_number()
+   call save_Tmn('Tmn_saved.bin')
+ else
+   call read_Tmn('Tmn_saved.bin')
+ endif
+
  call print_conserved('conserved_quantities.txt')
  call print_Tmn('Tmn.txt', .False., 4, 0) ! FALSE - comp. frame
  call get_Landau_Tmn()
@@ -75,6 +101,34 @@ subroutine delete_arrays_from_memory()
   deallocate(total_S)
 end subroutine
 
+subroutine save_Tmn(fname)
+  character(len=*), intent(in) :: fname
+  print *, "Saving Tmn data to file ", fname
+  open(unit = 9, file = fname, status = 'new', form='unformatted')
+    write(9)total_ev, max_sort, nt, nx, nz, dt, dx, dz, gs_sigma
+    write(9)Tmn
+    write(9)jmu
+    write(9)jBmu
+    write(9)jSmu
+  close(9)
+end subroutine
+
+subroutine read_Tmn(fname)
+  character(len=*), intent(in) :: fname
+  print *, "Reading Tmn data to file ", fname
+  open(unit = 9, file = fname, status = 'old', form='unformatted')
+    read(9)total_ev, max_sort, nt, nx, nz, dt, dx, dz, gs_sigma
+    print *,"Total events: ", total_ev
+    print *,"nt, nx, nz: ", nt, nx, nz
+    print *,"dt, dx, dz: ", dt, dx, dz
+    call init_arrays()
+    read(9)Tmn
+    read(9)jmu
+    read(9)jBmu
+    read(9)jSmu
+  close(9)
+end subroutine
+
 subroutine get_Landau_Tmn()
  use Land_Eck, only: FindLandau
  implicit none
@@ -97,6 +151,7 @@ subroutine Tmn_from_f14(fname)
  integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart, io
  integer it, ix, iz
 
+ print *, "Reading from ", fname
  open(unit = 14, file = fname)
  do ! event cycle
    if (.not. read_f14_event_header(14, Elab, ev, tsteps, dt)) then
@@ -158,14 +213,17 @@ subroutine Tmn_from_f14(fname)
  end do ! end event cycle
  close(14)
 
- ! Normalize to number of events
- Tmn = Tmn / ev
- jBmu = jBmu / ev
- jSmu = jSmu / ev
- total_p = total_p / ev
- total_B = total_B / ev
- total_S = total_S / ev
+ total_ev = total_ev + ev
+end subroutine
 
+subroutine normalize_to_event_number()
+ print *,"normalazing to total number of events: ", total_ev
+ Tmn = Tmn / total_ev
+ jBmu = jBmu / total_ev
+ jSmu = jSmu / total_ev
+ total_p = total_p / total_ev
+ total_B = total_B / total_ev
+ total_S = total_S / total_ev
 end subroutine
 
 double precision function smearing_factor(dr, p)
