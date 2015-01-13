@@ -4,7 +4,7 @@ program thermalization
  double precision, parameter :: pi = dacos(-1.d0)
  double precision dt, dx, dz
  double precision gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
- integer nt, nx, nz
+ integer nt, nx, nz, ix_plot, iz_plot
  integer max_sort
  integer total_ev, total_files
  integer i_file
@@ -34,8 +34,8 @@ program thermalization
    gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
 
    call init_arrays()
-   datafile_alias = '/scratch/hyihp/oliiny/UrQMD_check/urqmd-3.4/test.f14'
-                    !'/scratch/hyihp/oliiny/therm_project/urqmd_*/urqmd-3.4/test.f14'
+   ! datafile_alias = '/scratch/hyihp/oliiny/therm_project/urqmd_*/urqmd-3.4/test.f14'
+   datafile_alias = '/scratch/hyihp/oliiny/therm_project/urqmd_258809*/urqmd-3.4/test.f14'
    call system('ls '//trim(datafile_alias)//'|wc -l > file_list.txt')
    call system('ls '//trim(datafile_alias)//' >> file_list.txt')
 
@@ -48,21 +48,39 @@ program thermalization
    end do
    close(20)
    call normalize_to_event_number()
-   call save_Tmn('Tmn_saved.bin')
+   call save_Tmn('Tmn_saved_ev10000.bin')
  else
-   call read_Tmn('Tmn_saved.bin')
+   call read_Tmn('Tmn_saved_ev10000.bin')
  endif
 
  call print_conserved('conserved_quantities.txt')
- call print_Tmn('Tmn.txt', .False., 4, 0) ! FALSE - comp. frame
+
+ ix_plot = 2
+ iz_plot = 0
+ call print_Tmn('Tmn.txt', .False., ix_plot, iz_plot) ! FALSE - comp. frame
+
  call get_Landau_Tmn()
- call print_Tmn('TmnL.txt', .True., 4, 0) ! TRUE - Landau RF
- call print_collective_velocities('v_collective.txt', 4, 0)
+
+ call print_Tmn('TmnL.txt', .True., ix_plot, iz_plot) ! TRUE - Landau RF
+ call print_collective_velocities('v_collective.txt', ix_plot, iz_plot)
+
  call print_vtk_map('vtk/edens.vtk', "energy_density")
  call print_vtk_map('vtk/dens.vtk',  "density")
  call print_vtk_map('vtk/p.vtk',     "average_pressure")
  call print_vtk_map('vtk/x.vtk',     "pressure_asymetry_x")
- call print_vtk_map('vtk/y.vtk',     "off_diagonalilty_measure_y")
+ call print_vtk_map('vtk/y.vtk',     "off_diagonality_measure_y")
+
+ call print_var_versus_t('plots/vz_all.dat', 'vz', 0, ix_plot, iz_plot)
+ call print_var_versus_t('plots/vz_pi.dat',  'vz', 1, ix_plot, iz_plot)
+ call print_var_versus_t('plots/vz_K.dat',   'vz', 2, ix_plot, iz_plot)
+ call print_var_versus_t('plots/vz_rho.dat', 'vz', 3, ix_plot, iz_plot)
+ call print_var_versus_t('plots/vz_N.dat',   'vz', 4, ix_plot, iz_plot)
+ call print_var_versus_t('plots/vz_De.dat',  'vz', 5, ix_plot, iz_plot)
+ call print_var_versus_t('plots/e_tot.dat', 'energy_density',   0, ix_plot, iz_plot)
+ call print_var_versus_t('plots/p_tot.dat', 'average_pressure', 0, ix_plot, iz_plot)
+ call print_var_versus_t('plots/x_tot.dat', 'pressure_asymetry_x', 0, ix_plot, iz_plot)
+ call print_var_versus_t('plots/x_pi.dat',  'pressure_asymetry_x', 1, ix_plot, iz_plot)
+
  call delete_arrays_from_memory()
 
 contains
@@ -231,7 +249,13 @@ double precision function smearing_factor(dr, p)
   double precision gam_inv, bet(1:3), tmp, dr_RF(1:3), dr_RF_sqr
 
   bet(1:3) = p(1:3)/p(0)
-  gam_inv = sqrt(1 - bet(1)*bet(1) - bet(2)*bet(2) - bet(3)*bet(3))
+  gam_inv = 1.d0 - bet(1)*bet(1) - bet(2)*bet(2) - bet(3)*bet(3)
+  if (gam_inv > 0.d0) then
+    gam_inv = sqrt(gam_inv)
+  else
+    gam_inv = huge(gam_inv)/2.d0 ! Very large number
+    print *,"Warning: got weird particle - p = ", p
+  endif
   tmp = (bet(1)*dr(1) + bet(2)*dr(2) + bet(3)*dr(3))/gam_inv/(1.d0 + gam_inv)
   dr_RF(1:3) = dr(1:3) + tmp * bet(1:3)
   dr_RF_sqr = dr_RF(1)*dr_RF(1) + dr_RF(2)*dr_RF(2) + dr_RF(3)*dr_RF(3)
@@ -292,7 +316,7 @@ subroutine print_vtk_map(fname, variable_to_print)
             else
               var = 0.d0
             endif
-          case ("off_diagonalilty_measure_y")
+          case ("off_diagonality_measure_y")
             px = TmnL(1,1,0,it,ix,iz)
             py = TmnL(2,2,0,it,ix,iz)
             pz = TmnL(3,3,0,it,ix,iz)
@@ -313,6 +337,71 @@ subroutine print_vtk_map(fname, variable_to_print)
     end do
     close(8)
   end do
+
+end subroutine
+
+subroutine print_var_versus_t(fname, variable_to_print, sort, ix, iz)
+  use Land_Eck, only: EuclidProduct
+  character(len=*), intent(in) :: fname, variable_to_print
+  integer, intent(in) :: sort, ix, iz
+  integer it
+  double precision var, px, py, pz
+  character(len=12)sname
+
+  call get_sort_name(sort, sname)
+
+  open(unit = 8, file = fname, status = 'new')
+
+  write(8,'(A,A)')"# ",sname
+  write(8,'(A,A,2(A,F5.1),A)')"# ", variable_to_print, &
+                                " @ x = ", ix*dx, " fm, z = ", iz*dz, " fm"
+  write(8,'(A,A)')"# time[fm/c] ", variable_to_print
+
+  do it = 1, nt
+    select case(variable_to_print)
+      case ("energy_density")
+        var = TmnL(0,0,sort,it,ix,iz)
+      case ("average_pressure")
+        px = TmnL(1,1,sort,it,ix,iz)
+        py = TmnL(2,2,sort,it,ix,iz)
+        pz = TmnL(3,3,sort,it,ix,iz)
+        var = (px + py + pz) / 3.d0
+      case ("density")
+        var = EuclidProduct(jmu(0:3,sort,it,ix,iz), umu(0:3,sort,it,ix,iz))
+      case ("pressure_asymetry_x")
+        px = TmnL(1,1,sort,it,ix,iz)
+        py = TmnL(2,2,sort,it,ix,iz)
+        pz = TmnL(3,3,sort,it,ix,iz)
+        if (px + py + pz > 1.d-9) then
+          var = (abs(px-py) + abs(py-pz) + abs(pz-px))/(px + py + pz)
+        else
+          var = 0.d0
+        endif
+      case ("off_diagonality_measure_y")
+        px = TmnL(1,1,sort,it,ix,iz)
+        py = TmnL(2,2,sort,it,ix,iz)
+        pz = TmnL(3,3,sort,it,ix,iz)
+        if (px + py + pz > 1.d-9) then
+          var = ( abs(TmnL(1,2,sort,it,ix,iz)) + &
+                  abs(TmnL(1,3,sort,it,ix,iz)) + &
+                  abs(TmnL(2,3,sort,it,ix,iz)) &
+                ) / (px + py + pz) * 3.d0
+        else
+          var = 0.d0
+        endif
+      ! for all velocities: minus sign, because u_mu has lower index
+      case ("vx")
+        var = -umu(1,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+      case ("vy")
+        var = -umu(2,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+      case ("vz")
+        var = -umu(3,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+      case default
+        print *,"Wrong variable to write to vtk: ", variable_to_print
+    end select
+    write(8,'(f5.1,f10.4)') it*dt, var
+  end do
+  close(8)
 
 end subroutine
 

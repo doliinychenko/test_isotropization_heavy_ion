@@ -101,7 +101,11 @@ implicit none
  call rg(4, hlp, eigRe, eigIm, 1, eiv, ierr)
 
  !Catch errors
- if (ierr.ne.0) then; print *,"FindLandau: ierr: ",ierr; call exit(); endif
+ if (ierr.ne.0) then
+   print *,"FindLandau: ierr: ",ierr
+   call print_tensor(T)
+   call exit()
+ endif
  do mu=1,4
   if (abs(eigIm(mu))>1.d-9 .and. abs(eigRe(mu))>1.d-9) then
    print *,"FindLandau: imaginary eigenvalue";
@@ -109,17 +113,14 @@ implicit none
    print *,"eigIm: ",eigIm(mu)
    print *,"eigen vector:";  print *,(eiv(nu,mu),nu=1,4)
    print *,"Tmn:"
-   print *,T(1:4,1)
-   print *,T(1:4,2)
-   print *,T(1:4,3)
-   print *,T(1:4,4)
-   call exit();
+   call print_tensor(T)
+   call exit()
   endif
  end do
 
  !The largest eigenvalue (and the only positive) is energy density
  !Corresponding eigenvector is parallel to boost 4-velocity
- maxv=-1.d12; do mu=1,4; if (eigRe(mu)>maxv) then; maxv=eigRe(mu); nmax=mu; endif; end do
+ maxv=-1.d9; do mu=1,4; if (eigRe(mu)>maxv) then; maxv=eigRe(mu); nmax=mu; endif; end do
 
  if (abs(eigRe(nmax))<1.d-9) then
    ! print *, "FindLandau: very small eigen value - ", eigRe(nmax)
@@ -133,13 +134,19 @@ implicit none
    low_acc=.false.; do mu = 2,4;  if (abs(T_b(1,mu)/maxv) > 1.d-10) then; low_acc=.true.; endif; end do
    if (low_acc) then
      print *,"FindLandau: accuracy less than 10^-10";
-     print *,"Tensor to transform:"
-     do mu=1,4; print *,(T(mu,nu),nu=1,4); end do
-     print *,"Tensor in Landau frame:"
-     do mu=1,4; print *,(T_b(mu,nu),nu=1,4); end do
+     print *,"Tensor to transform:"; call print_tensor(T)
+     print *,"Tensor in Landau frame:"; call print_tensor(T_b)
    endif
  endif
 
+end subroutine
+
+subroutine print_tensor(T)
+  double precision, intent(in) :: T(4,4)
+  print *,T(1:4,1)
+  print *,T(1:4,2)
+  print *,T(1:4,3)
+  print *,T(1:4,4)
 end subroutine
 
 
