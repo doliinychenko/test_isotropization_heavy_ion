@@ -69,6 +69,7 @@ program thermalization
  call print_vtk_map('vtk/p.vtk',     "average_pressure")
  call print_vtk_map('vtk/x.vtk',     "pressure_asymetry_x")
  call print_vtk_map('vtk/y.vtk',     "off_diagonality_measure_y")
+ call print_vtk_map('vtk/invRe.vtk', "invRe")
 
  call print_var_versus_t('plots/vz_all.dat', 'vz', 0, ix_plot, iz_plot)
  call print_var_versus_t('plots/vz_pi.dat',  'vz', 1, ix_plot, iz_plot)
@@ -80,6 +81,7 @@ program thermalization
  call print_var_versus_t('plots/p_tot.dat', 'average_pressure', 0, ix_plot, iz_plot)
  call print_var_versus_t('plots/x_tot.dat', 'pressure_asymetry_x', 0, ix_plot, iz_plot)
  call print_var_versus_t('plots/x_pi.dat',  'pressure_asymetry_x', 1, ix_plot, iz_plot)
+ call print_var_versus_t('plots/invRe.dat',  'invRe', 0, ix_plot, iz_plot)
 
  call delete_arrays_from_memory()
 
@@ -239,6 +241,7 @@ subroutine normalize_to_event_number()
  Tmn = Tmn / total_ev
  jBmu = jBmu / total_ev
  jSmu = jSmu / total_ev
+ jmu  = jmu  / total_ev
  total_p = total_p / total_ev
  total_B = total_B / total_ev
  total_S = total_S / total_ev
@@ -279,7 +282,7 @@ subroutine print_vtk_map(fname, variable_to_print)
   character(len=*), intent(in) :: fname, variable_to_print
   character(len=4) s_hlp
   integer it, ix, iz
-  double precision var, px, py, pz
+  double precision var
 
   do it = 1, nt
     write(s_hlp,'(i4)')it
@@ -297,40 +300,7 @@ subroutine print_vtk_map(fname, variable_to_print)
 
     do iz = 0, nz
       do ix = 0, nx
-        select case(variable_to_print)
-          case ("energy_density")
-            var = TmnL(0,0,0,it,ix,iz)
-          case ("average_pressure")
-            px = TmnL(1,1,0,it,ix,iz)
-            py = TmnL(2,2,0,it,ix,iz)
-            pz = TmnL(3,3,0,it,ix,iz)
-            var = (px + py + pz) / 3.d0
-          case ("density")
-            var = EuclidProduct(jmu(0:3,0,it,ix,iz), umu(0:3,0,it,ix,iz))
-          case ("pressure_asymetry_x")
-            px = TmnL(1,1,0,it,ix,iz)
-            py = TmnL(2,2,0,it,ix,iz)
-            pz = TmnL(3,3,0,it,ix,iz)
-            if (px + py + pz > 1.d-9) then
-              var = (abs(px-py) +abs(py-pz) + abs(pz-px))/(px + py + pz)
-            else
-              var = 0.d0
-            endif
-          case ("off_diagonality_measure_y")
-            px = TmnL(1,1,0,it,ix,iz)
-            py = TmnL(2,2,0,it,ix,iz)
-            pz = TmnL(3,3,0,it,ix,iz)
-            if (px + py + pz > 1.d-9) then
-              var = ( abs(TmnL(1,2,0,it,ix,iz)) + &
-                      abs(TmnL(1,3,0,it,ix,iz)) + &
-                      abs(TmnL(2,3,0,it,ix,iz)) &
-                    ) / (px + py + pz) * 3.d0
-            else
-              var = 0.d0
-            endif
-          case default
-            print *,"Wrong variable to write to vtk: ", variable_to_print
-        end select
+        var = select_var(variable_to_print, 0,it,ix,iz)
         write(8,'(f10.4)', advance = 'no') var
       end do
       write(8,*)
@@ -341,11 +311,9 @@ subroutine print_vtk_map(fname, variable_to_print)
 end subroutine
 
 subroutine print_var_versus_t(fname, variable_to_print, sort, ix, iz)
-  use Land_Eck, only: EuclidProduct
   character(len=*), intent(in) :: fname, variable_to_print
   integer, intent(in) :: sort, ix, iz
   integer it
-  double precision var, px, py, pz
   character(len=12)sname
 
   call get_sort_name(sort, sname)
@@ -354,56 +322,109 @@ subroutine print_var_versus_t(fname, variable_to_print, sort, ix, iz)
 
   write(8,'(A,A)')"# ",sname
   write(8,'(A,A,2(A,F5.1),A)')"# ", variable_to_print, &
-                                " @ x = ", ix*dx, " fm, z = ", iz*dz, " fm"
+                              " @ x = ", ix*dx, " fm, z = ", iz*dz, " fm"
   write(8,'(A,A)')"# time[fm/c] ", variable_to_print
-
   do it = 1, nt
-    select case(variable_to_print)
-      case ("energy_density")
-        var = TmnL(0,0,sort,it,ix,iz)
-      case ("average_pressure")
-        px = TmnL(1,1,sort,it,ix,iz)
-        py = TmnL(2,2,sort,it,ix,iz)
-        pz = TmnL(3,3,sort,it,ix,iz)
-        var = (px + py + pz) / 3.d0
-      case ("density")
-        var = EuclidProduct(jmu(0:3,sort,it,ix,iz), umu(0:3,sort,it,ix,iz))
-      case ("pressure_asymetry_x")
-        px = TmnL(1,1,sort,it,ix,iz)
-        py = TmnL(2,2,sort,it,ix,iz)
-        pz = TmnL(3,3,sort,it,ix,iz)
-        if (px + py + pz > 1.d-9) then
-          var = (abs(px-py) + abs(py-pz) + abs(pz-px))/(px + py + pz)
-        else
-          var = 0.d0
-        endif
-      case ("off_diagonality_measure_y")
-        px = TmnL(1,1,sort,it,ix,iz)
-        py = TmnL(2,2,sort,it,ix,iz)
-        pz = TmnL(3,3,sort,it,ix,iz)
-        if (px + py + pz > 1.d-9) then
-          var = ( abs(TmnL(1,2,sort,it,ix,iz)) + &
-                  abs(TmnL(1,3,sort,it,ix,iz)) + &
-                  abs(TmnL(2,3,sort,it,ix,iz)) &
-                ) / (px + py + pz) * 3.d0
-        else
-          var = 0.d0
-        endif
-      ! for all velocities: minus sign, because u_mu has lower index
-      case ("vx")
-        var = -umu(1,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
-      case ("vy")
-        var = -umu(2,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
-      case ("vz")
-        var = -umu(3,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
-      case default
-        print *,"Wrong variable to write to vtk: ", variable_to_print
-    end select
-    write(8,'(f5.1,f10.4)') it*dt, var
+    write(8,'(f5.1,f10.4)') it*dt, select_var(variable_to_print, sort,it,ix,iz)
   end do
   close(8)
 
 end subroutine
+
+double precision function select_var(varname, sort,it,ix,iz) result (var)
+  use Land_Eck, only: EuclidProduct
+  integer, intent(in) :: sort,it,ix,iz
+  character(len=*), intent(in) :: varname
+
+  select case(varname)
+    case ("energy_density")
+      var = get_land_e0(sort,it,ix,iz)
+    case ("average_pressure")
+      var = get_land_p0(sort,it,ix,iz)
+    case ("density")
+      var = EuclidProduct(jmu(0:3,sort,it,ix,iz), umu(0:3,sort,it,ix,iz))
+    case ("pressure_asymetry_x")
+      var = get_asym_x(sort,it,ix,iz)
+    case ("off_diagonality_measure_y")
+      var = get_offdiag_y(sort,it,ix,iz)
+    case ("invRe")
+      var = get_inv_Re(sort,it,ix,iz)
+    ! for all velocities: minus sign, because u_mu has lower index
+    case ("vx")
+      var = -umu(1,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+    case ("vy")
+      var = -umu(2,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+    case ("vz")
+      var = -umu(3,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+    case default
+      print *,"Wrong variable name: ", varname
+  end select
+
+end function select_var
+
+double precision function get_land_e0(sort,it,ix,iz)
+  integer, intent(in) :: sort,it,ix,iz
+  get_land_e0 = TmnL(0,0,sort,it,ix,iz)
+end function get_land_e0
+
+double precision function get_land_p0(sort,it,ix,iz)
+  integer, intent(in) :: sort,it,ix,iz
+  double precision px, py, pz
+  px = TmnL(1,1,sort,it,ix,iz)
+  py = TmnL(2,2,sort,it,ix,iz)
+  pz = TmnL(3,3,sort,it,ix,iz)
+  get_land_p0 = (px + py + pz) / 3.d0
+end function get_land_p0
+
+double precision function get_asym_x(sort,it,ix,iz)
+  integer, intent(in) :: sort,it,ix,iz
+  double precision px, py, pz
+  px = TmnL(1,1,sort,it,ix,iz)
+  py = TmnL(2,2,sort,it,ix,iz)
+  pz = TmnL(3,3,sort,it,ix,iz)
+  if (px + py + pz > 1.d-9) then
+    get_asym_x = (abs(px-py) + abs(py-pz) + abs(pz-px))/(px + py + pz)
+  else
+    get_asym_x = 0.d0
+  endif
+end function get_asym_x
+
+double precision function get_offdiag_y(sort,it,ix,iz)
+  integer, intent(in) :: sort,it,ix,iz
+  double precision px, py, pz, Txy, Txz, Tyz
+  px = TmnL(1,1,sort,it,ix,iz)
+  py = TmnL(2,2,sort,it,ix,iz)
+  pz = TmnL(3,3,sort,it,ix,iz)
+  Txy = TmnL(1,2,sort,it,ix,iz)
+  Txz = TmnL(1,3,sort,it,ix,iz)
+  Tyz = TmnL(2,3,sort,it,ix,iz)
+  if (px + py + pz > 1.d-9) then
+    get_offdiag_y = (abs(Txy) + abs(Tyz) + abs(Txz)) / (px + py + pz) * 3.d0
+  else
+    get_offdiag_y = 0.d0
+  endif
+end function get_offdiag_y
+
+double precision function get_inv_Re(sort,it,ix,iz)
+  integer, intent(in) :: sort,it,ix,iz
+  double precision px, py, pz, Txy, Txz, Tyz, p0
+  px = TmnL(1,1,sort,it,ix,iz)
+  py = TmnL(2,2,sort,it,ix,iz)
+  pz = TmnL(3,3,sort,it,ix,iz)
+  Txy = TmnL(1,2,sort,it,ix,iz)
+  Txz = TmnL(1,3,sort,it,ix,iz)
+  Tyz = TmnL(2,3,sort,it,ix,iz)
+  p0 = (px + py + pz) / 3.d0
+  if (p0 > 1.d-9) then
+    get_inv_Re = sqrt(Txy*Txy + Tyz*Tyz + Txz*Txz + (px-p0)*(px-p0) +&
+                 (py-p0)*(py-p0) + (pz-p0)*(pz-p0)) / p0
+  else
+    ! Very big Re^-1 for vacuum: definitely kinetics, not hydro there
+    get_inv_Re = 1.d3
+  endif
+end function get_inv_Re
+
+
 
 subroutine print_collective_velocities(fname, ix, iz)
   character(len=*), intent(in) :: fname
