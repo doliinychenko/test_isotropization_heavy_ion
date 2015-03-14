@@ -15,10 +15,11 @@ program thermalization
  double precision, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
  double precision, dimension(:,:), allocatable :: total_p ! mu, t
+ integer, dimension(:,:,:,:), allocatable :: part_num_arr ! sort, t,x,z; no gaussian smearing
  integer, dimension(:), allocatable :: total_B, total_S !t
  logical load_from_saved
 
- load_from_saved = .True.
+ load_from_saved = .False.
 
  if (.not. load_from_saved) then
    total_ev = 0
@@ -29,7 +30,7 @@ program thermalization
    nx = 10
    nz = 10
    gs_sigma = 1.d0
-   many_sigma_sqr = 4 * 4 * gs_sigma * gs_sigma
+   many_sigma_sqr = 3 * 3 * gs_sigma * gs_sigma
    gauss_denom = 2 * gs_sigma * gs_sigma
    gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
 
@@ -70,6 +71,7 @@ program thermalization
  call print_vtk_map('vtk/x.vtk',     "pressure_asymetry_x")
  call print_vtk_map('vtk/y.vtk',     "off_diagonality_measure_y")
  call print_vtk_map('vtk/invRe.vtk', "invRe")
+ call print_vtk_map('vtk/Npart.vtk', "particle_number")
 
  call print_var_versus_t('plots/vz_all.dat', 'vz', 0, ix_plot, iz_plot)
  call print_var_versus_t('plots/vz_pi.dat',  'vz', 1, ix_plot, iz_plot)
@@ -88,20 +90,22 @@ program thermalization
 contains
 
 subroutine init_arrays()
-  allocate(Tmn(0:3, 0:3, 0:max_sort,  1:nt, 0:nx, 0:nz))
-  allocate(TmnL(0:3, 0:3, 0:max_sort,  1:nt, 0:nx, 0:nz))
-  allocate(jmu(0:3, 0:max_sort,  1:nt, 0:nx, 0:nz))
-  allocate(jBmu(0:3,  1:nt, 0:nx, 0:nz))
-  allocate(jSmu(0:3,  1:nt, 0:nx, 0:nz))
-  allocate(umu(0:3, 0:max_sort,  1:nt, 0:nx, 0:nz))
+  allocate(Tmn(0:3, 0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
+  allocate(TmnL(0:3, 0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
+  allocate(jmu(0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
+  allocate(jBmu(0:3,  1:nt, -nx:nx, -nz:nz))
+  allocate(jSmu(0:3,  1:nt, -nx:nx, -nz:nz))
+  allocate(umu(0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
   allocate(total_p(0:3, 1:nt))
   allocate(total_B(1:nt))
   allocate(total_S(1:nt))
+  allocate(part_num_arr(0:max_sort, 1:nt, -nx:nx, -nz:nz))
   Tmn     = 0.d0
   TmnL    = 0.d0
   jBmu    = 0.d0
   jSmu    = 0.d0
   jmu     = 0.d0
+  part_num_arr = 0
   total_p(0:3,:) = 0.d0
   total_B(:) = 0
   total_S(:) = 0
@@ -119,6 +123,7 @@ subroutine delete_arrays_from_memory()
   deallocate(total_p)
   deallocate(total_B)
   deallocate(total_S)
+  deallocate(part_num_arr)
 end subroutine
 
 subroutine save_Tmn(fname)
@@ -130,6 +135,7 @@ subroutine save_Tmn(fname)
     write(9)jmu
     write(9)jBmu
     write(9)jSmu
+    write(9)part_num_arr
   close(9)
 end subroutine
 
@@ -146,6 +152,7 @@ subroutine read_Tmn(fname)
     read(9)jmu
     read(9)jBmu
     read(9)jSmu
+    read(9)part_num_arr
   close(9)
 end subroutine
 
@@ -156,7 +163,7 @@ subroutine get_Landau_Tmn()
  integer it, sort, ix, iz
  do it = 1, nt
    do sort = 0, max_sort
-     do ix = 0, nx; do iz = 0, nz
+     do ix = -nx, nx; do iz = -nz, nz
        call FindLandau( Tmn(0:3, 0:3, sort, it, ix, iz),&
                        TmnL(0:3, 0:3, sort, it, ix, iz),&
                        umu(0:3, sort, it, ix, iz))
@@ -198,7 +205,7 @@ subroutine Tmn_from_f14(fname)
        upart(0) = 1.d0
        upart(1:3) = p(1:3)/p(0)
 
-       do ix = 0, nx; do iz = 0, nz ! loop over space grid
+       do ix = -nx, nx; do iz = -nz, nz ! loop over space grid
          ! dr - comp. frame vector from grid point to particle
          dr(1) = r(1) - ix * dx
          dr(2) = r(2)
@@ -212,6 +219,7 @@ subroutine Tmn_from_f14(fname)
                                        upart(0:3) * sf * Spart
          jmu(0:3, 0, it, ix, iz) = jmu(0:3, 0, it, ix, iz) +&
                                        upart(0:3) * sf
+         part_num_arr(0, it, ix, iz) = part_num_arr(0, it, ix, iz) + 1
          do nu = 0,3
            Tmn(0:3, nu, 0, it, ix, iz) = Tmn(0:3, nu, 0, it, ix, iz) +&
                                          upart(0:3) * p(nu) * sf
@@ -222,6 +230,7 @@ subroutine Tmn_from_f14(fname)
          if (sort > 0) then
            jmu(0:3, sort, it, ix, iz) = jmu(0:3, sort, it, ix, iz) +&
                                             upart(0:3) * sf
+           part_num_arr(sort, it, ix, iz) = part_num_arr(sort, it, ix, iz) + 1
            do nu = 0,3
              Tmn(0:3, nu, sort, it, ix, iz) = Tmn(0:3, nu, sort, it, ix, iz) +&
                                               upart(0:3) * p(nu) * sf
@@ -278,7 +287,6 @@ subroutine print_conserved(fname)
 end subroutine
 
 subroutine print_vtk_map(fname, variable_to_print)
-  use Land_Eck, only: EuclidProduct
   character(len=*), intent(in) :: fname, variable_to_print
   character(len=4) s_hlp
   integer it, ix, iz
@@ -291,17 +299,17 @@ subroutine print_vtk_map(fname, variable_to_print)
     write(8,'(A)')variable_to_print
     write(8,'(A)')"ASCII"
     write(8,'(A)')"DATASET STRUCTURED_POINTS"
-    write(8,'(A11,3I5)')"DIMENSIONS ", nx+1, 1, nz+1
+    write(8,'(A11,3I5)')"DIMENSIONS ", 2*nx+1, 1, 2*nz+1
     write(8,'(A8,3I5)')"SPACING ", 1, 1, 1
-    write(8,'(A7,3I5)')"ORIGIN ", 0, 0, 0
-    write(8,'(A,I8)')"POINT_DATA", (nx+1) * (nz+1)
+    write(8,'(A7,3I5)')"ORIGIN ", nx, 0, nz
+    write(8,'(A,I8)')"POINT_DATA", (2*nx+1) * (2*nz+1)
     write(8,'(A,A,A)')"SCALARS ", variable_to_print, " float 1"
     write(8,'(A)')"LOOKUP_TABLE default"
 
-    do iz = 0, nz
-      do ix = 0, nx
+    do iz = -nz, nz
+      do ix = -nx, nx
         var = select_var(variable_to_print, 0,it,ix,iz)
-        write(8,'(f10.4)', advance = 'no') var
+        write(8,'(f16.4)', advance = 'no') var
       end do
       write(8,*)
     end do
@@ -343,6 +351,8 @@ double precision function select_var(varname, sort,it,ix,iz) result (var)
       var = get_land_p0(sort,it,ix,iz)
     case ("density")
       var = EuclidProduct(jmu(0:3,sort,it,ix,iz), umu(0:3,sort,it,ix,iz))
+    case ("particle_number")
+      var = part_num_arr(sort,it,ix,iz)
     case ("pressure_asymetry_x")
       var = get_asym_x(sort,it,ix,iz)
     case ("off_diagonality_measure_y")
