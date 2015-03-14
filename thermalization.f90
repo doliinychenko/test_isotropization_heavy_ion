@@ -1,4 +1,8 @@
 program thermalization
+ ! For command line options
+ use kinds
+ use cla
+
  implicit none
 
  double precision, parameter :: pi = dacos(-1.d0)
@@ -8,7 +12,7 @@ program thermalization
  integer max_sort
  integer total_ev, total_files
  integer i_file
- character*300 particle_file, datafile_alias
+ character*80 particle_file, datafile_alias, saveload_file
 
  double precision, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
@@ -19,24 +23,36 @@ program thermalization
  integer, dimension(:), allocatable :: total_B, total_S !t
  logical load_from_saved
 
- load_from_saved = .False.
+ call cla_init
+ call cla_register('-load_from_saved',  'load Tmn from previously saved file',  cla_logical  ,'T')
+ call cla_register('-urqmd_input',  'urqmd file alias', cla_char, &
+                   '/scratch/hyihp/oliiny/therm_project/urqmd_2588090/urqmd-3.4/test.f14')
+ call cla_register('-save_load_file',  'file to save/load Tmn, jmu, etc',  cla_char  ,'test')
+ call cla_register('-nx', 'grid x dimension (-nx:nx) in dx', cla_int, '10')
+ call cla_register('-nz', 'grid z dimension (-nz:nz) in dz', cla_int, '10')
+ call cla_register('-nt', 'number of points in time to consider', cla_int, '20')
+ call cla_register('-dx', 'grid x step [fm]', cla_float, '1.d0')
+ call cla_register('-dz', 'grid z step [fm]', cla_float, '1.d0')
+ call cla_validate
+ call cla_get('-load_from_saved', load_from_saved)
+ call cla_get('-urqmd_input', datafile_alias)
+ call cla_get('-save_load_file', saveload_file)
 
  if (.not. load_from_saved) then
    total_ev = 0
    max_sort = 7
-   dx = 1.d0
-   dz = 1.d0
-   nt = 20
-   nx = 10
-   nz = 10
+   call cla_get('-nx', nx)
+   call cla_get('-nz', nz)
+   call cla_get('-nt', nt)
+   call cla_get('-dx', dx)
+   call cla_get('-dz', dz)
+
    gs_sigma = 1.d0
    many_sigma_sqr = 3 * 3 * gs_sigma * gs_sigma
    gauss_denom = 2 * gs_sigma * gs_sigma
    gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
 
    call init_arrays()
-   ! datafile_alias = '/scratch/hyihp/oliiny/therm_project/urqmd_*/urqmd-3.4/test.f14'
-   datafile_alias = '/scratch/hyihp/oliiny/therm_project/urqmd_258809*/urqmd-3.4/test.f14'
    call system('ls '//trim(datafile_alias)//'|wc -l > file_list.txt')
    call system('ls '//trim(datafile_alias)//' >> file_list.txt')
 
@@ -49,9 +65,9 @@ program thermalization
    end do
    close(20)
    call normalize_to_event_number()
-   call save_Tmn('Tmn_saved_ev10000.bin')
+   call save_Tmn(trim(adjustl(saveload_file)))
  else
-   call read_Tmn('Tmn_saved_ev10000.bin')
+   call read_Tmn(trim(adjustl(saveload_file)))
  endif
 
  call print_conserved('conserved_quantities.txt')
@@ -129,7 +145,7 @@ end subroutine
 subroutine save_Tmn(fname)
   character(len=*), intent(in) :: fname
   print *, "Saving Tmn data to file ", fname
-  open(unit = 9, file = fname, status = 'new', form='unformatted')
+  open(unit = 9, file = fname, form='unformatted')
     write(9)total_ev, max_sort, nt, nx, nz, dt, dx, dz, gs_sigma
     write(9)Tmn
     write(9)jmu
@@ -142,7 +158,7 @@ end subroutine
 subroutine read_Tmn(fname)
   character(len=*), intent(in) :: fname
   print *, "Reading Tmn data to file ", fname
-  open(unit = 9, file = fname, status = 'old', form='unformatted')
+  open(unit = 9, file = fname, form='unformatted')
     read(9)total_ev, max_sort, nt, nx, nz, dt, dx, dz, gs_sigma
     print *,"Total events: ", total_ev
     print *,"nt, nx, nz: ", nt, nx, nz

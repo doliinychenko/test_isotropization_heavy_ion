@@ -10,11 +10,11 @@ MDIR = ${PROJDIR}/modules
 OBJ = ${PROJDIR}/obj
 
 # List of executables to be built within the package
-PROGRAMS = ${MDIR}/eispack.o ${MDIR}/Land_Eck.o thermalization
+PROGRAMS = ${MDIR}/eispack.o ${MDIR}/kinds.o ${MDIR}/cla.o ${MDIR}/Land_Eck.o thermalization
 
 all: $(PROGRAMS)
 
-thermalization: thermalization.o eispack.o Land_Eck.o
+thermalization: thermalization.o eispack.o Land_Eck.o kinds.o cla.o
 	$(FC) $(FCFLAGS) -o $@ $^ -I${OBJ}
 
 %: %.o
