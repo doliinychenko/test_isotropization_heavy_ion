@@ -225,6 +225,11 @@ subroutine Tmn_from_f14(fname)
 
        ! Here all particles are counted, including spectators
        do ix = -nx, nx; do iz = -nz, nz
+         dr(1) = r(1) - ix * dx
+         dr(2) = r(2)
+         dr(3) = r(3) - iz * dz
+         if (too_far(dr(1:3))) then; cycle; endif
+
          part_num_arr(0, it, ix, iz) = part_num_arr(0, it, ix, iz) + 1
          part_num_arr(sort, it, ix, iz) = part_num_arr(sort, it, ix, iz) + 1
        end do; end do
@@ -387,7 +392,11 @@ subroutine print_percentage_of_var_in_range_vs_t(fname, varname, r_down, r_up)
         endif
       endif
     end do; end do
-    write(8,'(f5.1,f10.4)') it*dt, n2/n1*1.d2 ! in %
+    if (n1 > 0.d0) then
+      write(8,'(f5.1,f10.4)') it*dt, n2/n1*1.d2 ! in %
+    else
+      write(8,'(f5.1,f10.4)') it*dt, 0.d0
+    endif
   end do
   close(8)
 end subroutine
