@@ -6,15 +6,21 @@ program thermalization
  implicit none
 
  double precision, parameter :: pi = dacos(-1.d0)
+ integer, parameter :: phist_bins = 30
+ double precision, parameter :: phist_max = 1.5d0  ! GeV
+
  double precision dt, dx, dz
- double precision gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
  integer nt, nx, nz, ix_plot, iz_plot
  integer max_sort
  integer total_ev, total_files
  integer i_file
  character*80 particle_file, datafile_alias, saveload_file
+ double precision gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
 
  double precision, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
+ double precision, dimension(:,:,:,:,:), allocatable :: phist  ! sort, t,x,z, p
+ double precision, dimension(:,:,:,:), allocatable :: temp     ! sort, t,x,z
+ double precision, dimension(:,:,:,:), allocatable :: temp_err ! sort, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
  double precision, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
@@ -105,6 +111,20 @@ program thermalization
  call print_percentage_of_var_in_range_vs_t('plots/x_area.dat', 'pressure_asymetry_x', 1.d-3, 0.3d0)
  call print_percentage_of_var_in_range_vs_t('plots/y_area.dat', 'off_diagonality_measure_y', 1.d-3, 0.3d0)
 
+ call system('ls '//trim(datafile_alias)//'|wc -l > file_list.txt')
+ call system('ls '//trim(datafile_alias)//' >> file_list.txt')
+
+ print *,"Reading UrQMD files again to build dN/dp histograms"
+ open(unit = 20, file = 'file_list.txt')
+ read(20,*)total_files
+ print *,"Total files: ", total_files
+ do i_file = 1, total_files
+   read(20,'(A)') particle_file
+   call get_phist(trim(adjustl(particle_file)))
+ end do
+ close(20)
+ call print_phist('plots/test_phist.dat', 20, 0, 0, 1)  ! pions at (0,0) at 20*dt
+
  call delete_arrays_from_memory()
 
 contains
@@ -112,6 +132,9 @@ contains
 subroutine init_arrays()
   allocate(Tmn(0:3, 0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
   allocate(TmnL(0:3, 0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
+  allocate(phist(0:max_sort,  1:nt, -nx:nx, -nz:nz, 0:phist_bins))
+  allocate(temp(0:max_sort,  1:nt, -nx:nx, -nz:nz))
+  allocate(temp_err(0:max_sort,  1:nt, -nx:nx, -nz:nz))
   allocate(jmu(0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
   allocate(jBmu(0:3,  1:nt, -nx:nx, -nz:nz))
   allocate(jSmu(0:3,  1:nt, -nx:nx, -nz:nz))
@@ -125,6 +148,7 @@ subroutine init_arrays()
   jBmu    = 0.d0
   jSmu    = 0.d0
   jmu     = 0.d0
+  phist   = 0.d0
   part_num_arr = 0
   total_p(0:3,:) = 0.d0
   total_B(:) = 0
@@ -136,6 +160,9 @@ end subroutine
 subroutine delete_arrays_from_memory()
   deallocate(Tmn)
   deallocate(TmnL)
+  deallocate(phist)
+  deallocate(temp)
+  deallocate(temp_err)
   deallocate(jmu)
   deallocate(jBmu)
   deallocate(jSmu)
@@ -164,6 +191,10 @@ subroutine read_Tmn(fname)
   print *, "Reading Tmn data to file ", fname
   open(unit = 9, file = fname, form='unformatted')
     read(9)total_ev, max_sort, nt, nx, nz, dt, dx, dz, gs_sigma
+    many_sigma_sqr = 3 * 3 * gs_sigma * gs_sigma
+    gauss_denom = 2 * gs_sigma * gs_sigma
+    gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
+
     print *,"Total events: ", total_ev
     print *,"nt, nx, nz: ", nt, nx, nz
     print *,"dt, dx, dz: ", dt, dx, dz
@@ -205,7 +236,9 @@ subroutine Tmn_from_f14(fname)
    if (.not. read_f14_event_header(14, Elab, ev, tsteps, dt)) then
      exit
    endif
-   print *, "Event number: ", ev, " Elab[AGeV]: ", Elab, "tsteps: ", tsteps
+   if (mod(ev, 20) == 0) then
+     print *, "Event number: ", ev, " Elab[AGeV]: ", Elab, "tsteps: ", tsteps
+   endif
    do it = 1, tsteps
      read(14,*) Npart
      read(14,*)
@@ -587,6 +620,20 @@ subroutine get_sort_name(sort, sname)
   end select
 end subroutine
 
+double precision function get_sort_mass(sort) result (mass)
+  integer, intent(in) :: sort
+  select case(sort)
+    case (1); mass = 0.138d0
+    case (2); mass = 0.495d0
+    case (3); mass = 0.776d0
+    case (4); mass = 0.938d0
+    case (5); mass = 1.232d0
+    case (6); mass = 1.115d0
+    case (7); mass = 0.548d0
+    case default; print *, "error: unknown sort ", sort
+  end select
+end function get_sort_mass
+
 logical function too_far(dr)
   double precision, intent(in) :: dr(1:3)
   if (dr(1)*dr(1) + dr(2)*dr(2) + dr(3)*dr(3) > many_sigma_sqr) then
@@ -665,6 +712,102 @@ integer function SfromItyp(ityp) result (Sch)
   return
 
 end function SfromItyp
+
+integer function histindex_from_p(p) result (histindex)
+ implicit none
+ double precision, intent(in) :: p
+ histindex = floor(p/phist_max*phist_bins)
+end function histindex_from_p
+
+double precision function p_from_histindex(ind) result (p)
+ implicit none
+ integer, intent(in) :: ind
+ p = (ind + 0.5d0) * phist_max / phist_bins
+end function p_from_histindex
+
+subroutine print_phist(fname, it, ix, iz, sort)
+ implicit none
+ character(len=*), intent(in) :: fname
+ integer, intent(in) :: it, ix, iz, sort
+ integer i
+ double precision p, dN_dp_over_p2, m, E, bin_width
+
+ print *,"Writing momentum histograms to file ", fname
+ open(unit = 8, file = fname)
+ m = get_sort_mass(sort)
+ bin_width = phist_max / phist_bins
+ do i = 0, phist_bins
+   p = p_from_histindex(i)
+   E = sqrt(p*p + m*m)
+   dN_dp_over_p2 = phist(sort, it, ix, iz, i) / bin_width / p / p
+   write(8,'(2f12.5)') E, dN_dp_over_p2
+ end do
+ close(8)
+end subroutine
+
+subroutine get_phist(fname)
+ use Land_Eck, only: GetBoostMatrix
+ implicit none
+ character(len=*), intent(in) :: fname
+ double precision Elab, r(0:3), p(0:3), m, dr(1:3), sf, mom_abs
+ double precision M_boost(0:3,0:3), p_rest(0:3)
+ integer tsteps, ev, Npart, i, ityp, i3, sort, io
+ integer ch, last_col_part
+ integer it, ix, iz, hist_index
+
+ print *, "Momentum histograms building: reading from ", fname
+ open(unit = 14, file = fname)
+ do ! event cycle
+   if (.not. read_f14_event_header(14, Elab, ev, tsteps, dt)) then
+     exit
+   endif
+   if (mod(ev, 20) == 0) then
+     print *, "Event number: ", ev, " Elab[AGeV]: ", Elab, "tsteps: ", tsteps
+   endif
+   do it = 1, tsteps
+     read(14,*) Npart
+     read(14,*)
+     do i = 1, Npart
+
+       read(14,*, iostat = io) r(0:3), p(0:3), m, ityp, i3, ch, last_col_part
+       if (io .ne. 0) then
+         print *, "error reading file, io = ", io, " ev = ", ev, " i = ", i
+       endif
+       if (it > nt) then; cycle; endif
+       sort = get_sort(ityp)
+       if (sort < 0) then; cycle; endif
+
+       ! Do not add spectators to histogram
+       if (last_col_part == 0) then; cycle; endif
+
+       do ix = -nx, nx; do iz = -nz, nz ! loop over space grid
+         ! dr - comp. frame vector from grid point to particle
+         dr(1) = r(1) - ix * dx
+         dr(2) = r(2)
+         dr(3) = r(3) - iz * dz
+         if (too_far(dr(1:3))) then; cycle; endif
+         sf = smearing_factor(dr(1:3), p(0:3))
+
+         ! Add particle to momentum histogram
+         call GetBoostMatrix(umu(0:3, sort,  it, ix, iz), M_boost)
+         p_rest = matmul(M_boost, p(0:3))  ! boost to local Landau RF
+         mom_abs = sqrt(p_rest(1)*p_rest(1) + &
+                        p_rest(2)*p_rest(2) + &
+                        p_rest(3)*p_rest(3))
+         hist_index = histindex_from_p(mom_abs)
+         if (hist_index .le. phist_bins) then
+           ! print *, "Adding ", ityp, " with momentum ", p_rest(0:3),&
+           !         " to cell (ix,iz) = (", ix, ",", iz, ") at time it = ", it
+           phist(sort, it, ix, iz, hist_index) = &
+            phist(sort, it, ix, iz, hist_index) + sf
+         endif
+       end do; end do ! end loop over space grid
+     end do
+   end do
+ end do ! end event cycle
+ close(14)
+end subroutine
+
 
 
 end program thermalization
