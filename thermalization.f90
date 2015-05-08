@@ -33,7 +33,7 @@ program thermalization
  call cla_register('-load_from_saved',  'load Tmn from previously saved file',  cla_logical  ,'T')
  call cla_register('-urqmd_input',  'urqmd file alias', cla_char, &
                    '/scratch/hyihp/oliiny/therm_project/urqmd_2588090/urqmd-3.4/test.f14')
- call cla_register('-save_load_file',  'file to save/load Tmn, jmu, etc',  cla_char  ,'test')
+ call cla_register('-save_load_file',  'file to save/load Tmn, jmu, etc',  cla_char, 'test')
  call cla_register('-nx', 'grid x dimension (-nx:nx) in dx', cla_int, '10')
  call cla_register('-nz', 'grid z dimension (-nz:nz) in dz', cla_int, '10')
  call cla_register('-nt', 'number of points in time to consider', cla_int, '20')
@@ -43,6 +43,7 @@ program thermalization
  call cla_get('-load_from_saved', load_from_saved)
  call cla_get('-urqmd_input', datafile_alias)
  call cla_get('-save_load_file', saveload_file)
+
 
  if (.not. load_from_saved) then
    total_ev = 0
@@ -71,9 +72,22 @@ program thermalization
    end do
    close(20)
    call normalize_to_event_number()
+   call get_Landau_Tmn()
+
+   print *,"Reading UrQMD files again to build dN/dp histograms"
+   open(unit = 20, file = 'file_list.txt')
+   read(20,*)total_files
+   print *,"Total files: ", total_files
+   do i_file = 1, total_files
+     read(20,'(A)') particle_file
+     call get_phist(trim(adjustl(particle_file)))
+   end do
+   close(20)
+
    call save_Tmn(trim(adjustl(saveload_file)))
  else
    call read_Tmn(trim(adjustl(saveload_file)))
+   call get_Landau_Tmn()
  endif
 
  call print_conserved('conserved_quantities.txt')
@@ -81,8 +95,6 @@ program thermalization
  ix_plot = 6
  iz_plot = 0
  call print_Tmn('Tmn.txt', .False., ix_plot, iz_plot) ! FALSE - comp. frame
-
- call get_Landau_Tmn()
 
  call print_Tmn('TmnL.txt', .True., ix_plot, iz_plot) ! TRUE - Landau RF
  call print_collective_velocities('v_collective.txt', ix_plot, iz_plot)
@@ -114,15 +126,6 @@ program thermalization
  call system('ls '//trim(datafile_alias)//'|wc -l > file_list.txt')
  call system('ls '//trim(datafile_alias)//' >> file_list.txt')
 
- print *,"Reading UrQMD files again to build dN/dp histograms"
- open(unit = 20, file = 'file_list.txt')
- read(20,*)total_files
- print *,"Total files: ", total_files
- do i_file = 1, total_files
-   read(20,'(A)') particle_file
-   call get_phist(trim(adjustl(particle_file)))
- end do
- close(20)
  call print_phist('plots/test_phist.dat', 20, 0, 0, 1)  ! pions at (0,0) at 20*dt
 
  call delete_arrays_from_memory()
@@ -183,6 +186,7 @@ subroutine save_Tmn(fname)
     write(9)jBmu
     write(9)jSmu
     write(9)part_num_arr
+    write(9)phist
   close(9)
 end subroutine
 
@@ -204,6 +208,7 @@ subroutine read_Tmn(fname)
     read(9)jBmu
     read(9)jSmu
     read(9)part_num_arr
+    read(9)phist
   close(9)
 end subroutine
 
