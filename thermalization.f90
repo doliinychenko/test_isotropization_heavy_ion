@@ -791,7 +791,6 @@ subroutine get_phist(fname)
          dr(2) = r(2)
          dr(3) = r(3) - iz * dz
          if (too_far(dr(1:3))) then; cycle; endif
-         sf = smearing_factor(dr(1:3), p(0:3))
 
          ! Add particle to momentum histogram
          call GetBoostMatrix(umu(0:3, sort,  it, ix, iz), M_boost)
@@ -804,7 +803,7 @@ subroutine get_phist(fname)
            ! print *, "Adding ", ityp, " with momentum ", p_rest(0:3),&
            !         " to cell (ix,iz) = (", ix, ",", iz, ") at time it = ", it
            phist(sort, it, ix, iz, hist_index) = &
-            phist(sort, it, ix, iz, hist_index) + sf
+             phist(sort, it, ix, iz, hist_index) + 1.d0
          endif
        end do; end do ! end loop over space grid
      end do
