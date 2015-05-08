@@ -2,6 +2,7 @@ program thermalization
  ! For command line options
  use kinds
  use cla
+ use Least_Sqr, only: test_least_squares_line
 
  implicit none
 
@@ -20,7 +21,7 @@ program thermalization
  double precision, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: phist  ! sort, t,x,z, p
  double precision, dimension(:,:,:,:), allocatable :: temp     ! sort, t,x,z
- double precision, dimension(:,:,:,:), allocatable :: temp_err ! sort, t,x,z
+ double precision, dimension(:,:,:,:), allocatable :: temp_chi2 ! sort, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: jmu ! mu, sort, t,x,z
  double precision, dimension(:,:,:,:), allocatable :: jBmu, jSmu ! mu, t,x,z
  double precision, dimension(:,:,:,:,:), allocatable :: umu ! mu, sort, t,x,z
@@ -28,7 +29,11 @@ program thermalization
  integer, dimension(:,:,:,:), allocatable :: part_num_arr ! sort, t,x,z; no gaussian smearing
  integer, dimension(:), allocatable :: total_B, total_S !t
  logical load_from_saved
+ integer counti_clock, countf_clock, count_rate_clock
 
+ call system_clock(counti_clock, count_rate_clock)
+
+ if (.not. test_least_squares_line()) then; stop; endif
  call cla_init
  call cla_register('-load_from_saved',  'load Tmn from previously saved file',  cla_logical  ,'T')
  call cla_register('-urqmd_input',  'urqmd file alias', cla_char, &
@@ -90,22 +95,25 @@ program thermalization
    call get_Landau_Tmn()
  endif
 
+ call calculate_temperature()
+
  call print_conserved('conserved_quantities.txt')
 
- ix_plot = 6
+ ix_plot = 0
  iz_plot = 0
  call print_Tmn('Tmn.txt', .False., ix_plot, iz_plot) ! FALSE - comp. frame
 
  call print_Tmn('TmnL.txt', .True., ix_plot, iz_plot) ! TRUE - Landau RF
  call print_collective_velocities('v_collective.txt', ix_plot, iz_plot)
 
- call print_vtk_map('vtk/edens.vtk', "energy_density")
- call print_vtk_map('vtk/dens.vtk',  "density")
- call print_vtk_map('vtk/p.vtk',     "average_pressure")
- call print_vtk_map('vtk/x.vtk',     "pressure_asymetry_x")
- call print_vtk_map('vtk/y.vtk',     "off_diagonality_measure_y")
- call print_vtk_map('vtk/invRe.vtk', "invRe")
- call print_vtk_map('vtk/Npart.vtk', "particle_number")
+ call print_vtk_map('vtk/edens.vtk', "energy_density", 0)
+ call print_vtk_map('vtk/dens.vtk',  "density", 0)
+ call print_vtk_map('vtk/p.vtk',     "average_pressure", 0)
+ call print_vtk_map('vtk/x.vtk',     "pressure_asymetry_x", 0)
+ call print_vtk_map('vtk/y.vtk',     "off_diagonality_measure_y", 0)
+ call print_vtk_map('vtk/invRe.vtk', "invRe", 0)
+ call print_vtk_map('vtk/Npart.vtk', "particle_number", 0)
+ call print_vtk_map('vtk/T.vtk',     "temperature", 1)
 
  call print_var_versus_t('plots/vz_all.dat', 'vz', 0, ix_plot, iz_plot)
  call print_var_versus_t('plots/vz_pi.dat',  'vz', 1, ix_plot, iz_plot)
@@ -119,6 +127,7 @@ program thermalization
  call print_var_versus_t('plots/x_pi.dat',  'pressure_asymetry_x', 1, ix_plot, iz_plot)
  call print_var_versus_t('plots/y_tot.dat', 'off_diagonality_measure_y', 0, ix_plot,iz_plot)
  call print_var_versus_t('plots/invRe.dat',  'invRe', 0, ix_plot, iz_plot)
+ call print_var_versus_t('plots/T.dat',     'temperature', 1, ix_plot, iz_plot)
 
  call print_percentage_of_var_in_range_vs_t('plots/x_area.dat', 'pressure_asymetry_x', 1.d-3, 0.3d0)
  call print_percentage_of_var_in_range_vs_t('plots/y_area.dat', 'off_diagonality_measure_y', 1.d-3, 0.3d0)
@@ -129,7 +138,8 @@ program thermalization
  call print_phist('plots/test_phist.dat', 20, 0, 0, 1)  ! pions at (0,0) at 20*dt
 
  call delete_arrays_from_memory()
-
+ call system_clock(countf_clock)
+ write(*,'(A,I6,A)') "Program ran ", (countf_clock-counti_clock)/count_rate_clock, " seconds."
 contains
 
 subroutine init_arrays()
@@ -137,7 +147,7 @@ subroutine init_arrays()
   allocate(TmnL(0:3, 0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
   allocate(phist(0:max_sort,  1:nt, -nx:nx, -nz:nz, 0:phist_bins))
   allocate(temp(0:max_sort,  1:nt, -nx:nx, -nz:nz))
-  allocate(temp_err(0:max_sort,  1:nt, -nx:nx, -nz:nz))
+  allocate(temp_chi2(0:max_sort,  1:nt, -nx:nx, -nz:nz))
   allocate(jmu(0:3, 0:max_sort,  1:nt, -nx:nx, -nz:nz))
   allocate(jBmu(0:3,  1:nt, -nx:nx, -nz:nz))
   allocate(jSmu(0:3,  1:nt, -nx:nx, -nz:nz))
@@ -165,7 +175,7 @@ subroutine delete_arrays_from_memory()
   deallocate(TmnL)
   deallocate(phist)
   deallocate(temp)
-  deallocate(temp_err)
+  deallocate(temp_chi2)
   deallocate(jmu)
   deallocate(jBmu)
   deallocate(jSmu)
@@ -357,8 +367,9 @@ subroutine print_conserved(fname)
   close(8)
 end subroutine
 
-subroutine print_vtk_map(fname, variable_to_print)
+subroutine print_vtk_map(fname, variable_to_print, sort)
   character(len=*), intent(in) :: fname, variable_to_print
+  integer, intent(in) :: sort
   character(len=4) s_hlp
   integer it, ix, iz
   double precision var
@@ -379,7 +390,7 @@ subroutine print_vtk_map(fname, variable_to_print)
 
     do iz = -nz, nz
       do ix = -nx, nx
-        var = select_var(variable_to_print, 0,it,ix,iz)
+        var = select_var(variable_to_print, sort,it,ix,iz)
         write(8,'(f16.4)', advance = 'no') var
       end do
       write(8,*)
@@ -466,6 +477,10 @@ double precision function select_var(varname, sort,it,ix,iz) result (var)
       var = -umu(2,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
     case ("vz")
       var = -umu(3,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+    case ("temperature")
+      var = temp(sort,it,ix,iz)
+    case ("temperature_chi2")
+      var = temp_chi2(sort,it,ix,iz)
     case default
       print *,"Wrong variable name: ", varname
   end select
@@ -737,7 +752,8 @@ subroutine print_phist(fname, it, ix, iz, sort)
  integer i
  double precision p, dN_dp_over_p2, m, E, bin_width
 
- print *,"Writing momentum histograms to file ", fname
+ print *,"Writing momentum histogram at time ", it*dt, " and ix,iz = ", ix, &
+         ",", iz, " to file ", fname
  open(unit = 8, file = fname)
  m = get_sort_mass(sort)
  bin_width = phist_max / phist_bins
@@ -754,7 +770,7 @@ subroutine get_phist(fname)
  use Land_Eck, only: GetBoostMatrix
  implicit none
  character(len=*), intent(in) :: fname
- double precision Elab, r(0:3), p(0:3), m, dr(1:3), sf, mom_abs
+ double precision Elab, r(0:3), p(0:3), m, dr(1:3), mom_abs
  double precision M_boost(0:3,0:3), p_rest(0:3)
  integer tsteps, ev, Npart, i, ityp, i3, sort, io
  integer ch, last_col_part
@@ -812,6 +828,49 @@ subroutine get_phist(fname)
  close(14)
 end subroutine
 
+subroutine calculate_temperature()
+! Fits the spectra log(dN/p^2 dp) versus E with a straight line ax+b
+! -1/a is considered as temperature
+ use Least_Sqr, only: least_squares_line
+ implicit none
+ integer sort, i, ix, iz, it, bin
+ double precision x(0:phist_bins), y(0:phist_bins), a, b, chi2, p, m
 
+ print *,"Fitting momentum spectra to get temperatures."
+
+ do sort = 1, max_sort
+
+   m = get_sort_mass(sort)
+   ! Loop the whole grid
+   do iz = -nz, nz; do ix = -nx, nx; do it = 1, nt
+
+     do i = 0, phist_bins
+       if (phist(sort, it, ix, iz, i) < 0.d0) then; exit; endif
+     end do
+     ! Now i is the index of the first zero in the histogram
+     ! We do not want any zeros because log will now be taken
+
+     ! Let us make fit based at least on four points
+     if (i < 4) then; cycle; endif
+     i = i-1  ! Now index i points to the last non-zero bin
+
+     do bin = 0, i
+       p = p_from_histindex(bin)
+       x(bin) = sqrt(p*p + m*m)
+       y(bin) = log(phist(sort, it, ix, iz, bin) / p / p)
+     end do
+
+     call least_squares_line(i+1, x(0:i), y(0:i), a, b, chi2)
+     if (abs(a) > 1.d-5) then
+       temp(sort, it, ix, iz) = -1.d0 / a
+       !  print *, "non-zero temperature: ", temp(sort, it, ix, iz), &
+       !        "at (it, ix,iz) = ", it, " ", ix, " ", iz
+     else
+       temp(sort, it, ix, iz) = 0.d0
+     endif
+     temp_chi2(sort, it, ix, iz) = chi2 / (i - 2)  ! i - 2 is n.d.f
+   end do; end do; end do
+ end do
+end subroutine
 
 end program thermalization
