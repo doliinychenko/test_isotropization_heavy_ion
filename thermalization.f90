@@ -99,7 +99,7 @@ program thermalization
 
  call print_conserved('conserved_quantities.txt')
 
- ix_plot = 0
+ ix_plot = 4
  iz_plot = 0
  call print_Tmn('Tmn.txt', .False., ix_plot, iz_plot) ! FALSE - comp. frame
 
@@ -114,6 +114,7 @@ program thermalization
  call print_vtk_map('vtk/invRe.vtk', "invRe", 0)
  call print_vtk_map('vtk/Npart.vtk', "particle_number", 0)
  call print_vtk_map('vtk/T.vtk',     "temperature", 1)
+ call print_vtk_map('vtk/v_LE.vtk',  "v_Land_Eck", 0)
 
  call print_var_versus_t('plots/vz_all.dat', 'vz', 0, ix_plot, iz_plot)
  call print_var_versus_t('plots/vz_pi.dat',  'vz', 1, ix_plot, iz_plot)
@@ -128,6 +129,7 @@ program thermalization
  call print_var_versus_t('plots/y_tot.dat', 'off_diagonality_measure_y', 0, ix_plot,iz_plot)
  call print_var_versus_t('plots/invRe.dat',  'invRe', 0, ix_plot, iz_plot)
  call print_var_versus_t('plots/T.dat',     'temperature', 1, ix_plot, iz_plot)
+ call print_var_versus_t('plots/v_LE.dat',  'v_Land_Eck', 0, ix_plot, iz_plot)
 
  call print_percentage_of_var_in_range_vs_t('plots/x_area.dat', 'pressure_asymetry_x', 1.d-3, 0.3d0)
  call print_percentage_of_var_in_range_vs_t('plots/y_area.dat', 'off_diagonality_measure_y', 1.d-3, 0.3d0)
@@ -477,6 +479,8 @@ double precision function select_var(varname, sort,it,ix,iz) result (var)
       var = -umu(2,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
     case ("vz")
       var = -umu(3,sort,it,ix,iz)/umu(0,sort,it,ix,iz)
+    case ("v_Land_Eck")
+      var = get_v_Land_Eck(it,ix,iz)
     case ("temperature")
       var = temp(sort,it,ix,iz)
     case ("temperature_chi2")
@@ -486,6 +490,19 @@ double precision function select_var(varname, sort,it,ix,iz) result (var)
   end select
 
 end function select_var
+
+double precision function get_v_Land_Eck(it,ix,iz)
+  use Land_Eck, only: GetBoostMatrix
+  integer, intent(in) :: it,ix,iz
+  double precision jmu_B_Land(0:3), M_boost(0:3, 0:3)
+  call GetBoostMatrix(umu(0:3, 0, it,ix,iz), M_boost)
+  jmu_B_Land(0:3) = matmul(jBmu(0:3, it,ix,iz), M_boost)
+  if (jmu_B_Land(0) > 1.d-6) then
+    get_v_Land_Eck = sqrt(sum(jmu_B_Land(1:3)*jmu_B_Land(1:3)))/jmu_B_Land(0)
+  else
+    get_v_Land_Eck = 0.d0
+  endif
+end function get_v_Land_Eck
 
 double precision function get_land_e0(sort,it,ix,iz)
   integer, intent(in) :: sort,it,ix,iz
