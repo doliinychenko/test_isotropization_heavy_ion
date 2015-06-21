@@ -33,6 +33,7 @@ program thermalization
 
  call system_clock(counti_clock, count_rate_clock)
 
+
  if (.not. test_least_squares_line()) then; stop; endif
  call cla_init
  call cla_register('-load_from_saved',  'load Tmn from previously saved file',  cla_logical  ,'T')
@@ -65,6 +66,7 @@ program thermalization
    gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
 
    call init_arrays()
+   call smearing_factor_test()
    call system('ls '//trim(datafile_alias)//'|wc -l > file_list.txt')
    call system('ls '//trim(datafile_alias)//' >> file_list.txt')
 
@@ -242,7 +244,7 @@ end subroutine
 
 subroutine Tmn_from_f14(fname)
  character(len=*), intent(in) :: fname
- double precision Elab, r(0:3), p(0:3), m, dr(1:3), sf, upart(0:3)
+ double precision Elab, r(0:3), p(0:3), m, dr(1:3), sf, vpart(0:3)
  integer tsteps, ev, Npart, i, nu, ityp, i3, sort, Bpart, Spart, io
  integer ch, last_col_part
  integer it, ix, iz
@@ -265,6 +267,9 @@ subroutine Tmn_from_f14(fname)
        if (io .ne. 0) then
          print *, "error reading file, io = ", io, " ev = ", ev, " i = ", i
        endif
+       if (abs(p(0)*p(0) - sum(p(1:3)*p(1:3)) - m*m) > 1.d-4) then
+         print *, "inconsistency of p and m: ", p(0:3), " ", m
+       endif
        if (it > nt) then; cycle; endif
        Bpart = BfromItyp(ityp)
        Spart = SfromItyp(ityp)
@@ -278,7 +283,7 @@ subroutine Tmn_from_f14(fname)
          dr(1) = r(1) - ix * dx
          dr(2) = r(2)
          dr(3) = r(3) - iz * dz
-         if (too_far(dr(1:3))) then; cycle; endif
+         if (smearing_factor(dr(1:3), p(0:3), m) < 1.d-9) then; cycle; endif
 
          part_num_arr(0, it, ix, iz) = part_num_arr(0, it, ix, iz) + 1
          part_num_arr(sort, it, ix, iz) = part_num_arr(sort, it, ix, iz) + 1
@@ -287,36 +292,36 @@ subroutine Tmn_from_f14(fname)
        ! Do not add spectators to anything else except total particle count
        if (last_col_part == 0) then; cycle; endif
 
-       upart(0) = 1.d0
-       upart(1:3) = p(1:3)/p(0)
+       vpart(0) = 1.d0
+       vpart(1:3) = p(1:3)/p(0)
 
        do ix = -nx, nx; do iz = -nz, nz ! loop over space grid
          ! dr - comp. frame vector from grid point to particle
          dr(1) = r(1) - ix * dx
          dr(2) = r(2)
          dr(3) = r(3) - iz * dz
-         if (too_far(dr(1:3))) then; cycle; endif
-         sf = smearing_factor(dr(1:3), p(0:3))
+         sf = smearing_factor(dr(1:3), p(0:3), m)
+         if (sf < 1.d-9) then; cycle; endif
 
          jBmu(0:3, it, ix, iz) = jBmu(0:3, it, ix, iz) +&
-                                       upart(0:3) * sf * Bpart
+                                       vpart(0:3) * sf * Bpart
          jSmu(0:3, it, ix, iz) = jSmu(0:3, it, ix, iz) +&
-                                       upart(0:3) * sf * Spart
+                                       vpart(0:3) * sf * Spart
          jmu(0:3, 0, it, ix, iz) = jmu(0:3, 0, it, ix, iz) +&
-                                       upart(0:3) * sf
+                                       vpart(0:3) * sf
          part_num_arr(0, it, ix, iz) = part_num_arr(0, it, ix, iz) + 1
          do nu = 0,3
            Tmn(0:3, nu, 0, it, ix, iz) = Tmn(0:3, nu, 0, it, ix, iz) +&
-                                         upart(0:3) * p(nu) * sf
+                                         vpart(0:3) * p(nu) * sf
          end do
 
          ! Sort specific analysis
          if (sort > 0) then
            jmu(0:3, sort, it, ix, iz) = jmu(0:3, sort, it, ix, iz) +&
-                                            upart(0:3) * sf
+                                            vpart(0:3) * sf
            do nu = 0,3
              Tmn(0:3, nu, sort, it, ix, iz) = Tmn(0:3, nu, sort, it, ix, iz) +&
-                                              upart(0:3) * p(nu) * sf
+                                              vpart(0:3) * p(nu) * sf
            end do
          endif ! end sort specific analysis
        end do; end do ! end loop over space grid
@@ -339,22 +344,50 @@ subroutine normalize_to_event_number()
  total_S = total_S / total_ev
 end subroutine
 
-double precision function smearing_factor(dr, p)
-  double precision, intent(in) :: dr(1:3), p(0:3)
-  double precision gam_inv, bet(1:3), tmp, dr_RF(1:3), dr_RF_sqr
-
-  bet(1:3) = p(1:3)/p(0)
-  gam_inv = 1.d0 - bet(1)*bet(1) - bet(2)*bet(2) - bet(3)*bet(3)
-  if (gam_inv > 0.d0) then
-    gam_inv = sqrt(gam_inv)
-  else
-    gam_inv = huge(gam_inv)/2.d0 ! Very large number
-    print *,"Warning: got weird particle - p = ", p
+subroutine smearing_factor_test()
+  double precision, dimension(0:3), parameter :: p0 = (/6.d0, 2.d0, 1.d0, 4.d0/)
+  double precision m, r(1:3), integral_sf, sf, d_coor
+  integer ix, iy, iz
+  print *, "Starting smearing factor test."
+  d_coor = 0.1d0
+  m = sqrt(p0(0)*p0(0) - sum(p0(1:3)*p0(1:3)))
+  integral_sf = 0.d0
+  print *, integral_sf
+  do ix = -50, 50; do iy = -50, 50; do iz = -50,50
+    r(1) = ix*d_coor
+    r(2) = iy*d_coor
+    r(3) = iz*d_coor
+    sf = smearing_factor(r, p0, m)
+    if (isnan(integral_sf)) then
+      print *, "met NaN, ", ix, iy, iz, " sf = ",  sf
+      stop
+    endif
+    integral_sf = integral_sf + sf
+  end do; end do; end do
+  integral_sf = integral_sf * (d_coor*d_coor*d_coor)
+  print *, "Integral (should be 1) is ", integral_sf
+  if (abs(integral_sf - 1.d0) > 4.d-2 .or. isnan(integral_sf)) then
+    stop
   endif
-  tmp = (bet(1)*dr(1) + bet(2)*dr(2) + bet(3)*dr(3))/gam_inv/(1.d0 + gam_inv)
-  dr_RF(1:3) = dr(1:3) + tmp * bet(1:3)
-  dr_RF_sqr = dr_RF(1)*dr_RF(1) + dr_RF(2)*dr_RF(2) + dr_RF(3)*dr_RF(3)
-  smearing_factor = gauss_norm * exp(-dr_RF_sqr/gauss_denom)
+end subroutine
+
+double precision function smearing_factor(dr, p, m)
+  double precision, intent(in) :: dr(1:3), p(0:3), m
+  double precision u(0:3), tmp, dr_sqr, dr_RF_sqr
+
+  dr_sqr = sum(dr(1:3)*dr(1:3))
+  if (dr_sqr > many_sigma_sqr .or. m < 1.d-3) then
+    smearing_factor = 0.d0
+  else
+    u(0:3) = p(0:3)/m
+    tmp = sum(dr(1:3)*u(1:3))
+    dr_RF_sqr = dr_sqr + tmp*tmp
+    if (dr_RF_sqr > many_sigma_sqr) then
+      smearing_factor = 0.d0
+    else
+      smearing_factor = gauss_norm * exp(-dr_RF_sqr/gauss_denom) * u(0)
+    endif
+  endif
 end function smearing_factor
 
 subroutine print_conserved(fname)
@@ -671,15 +704,6 @@ double precision function get_sort_mass(sort) result (mass)
   end select
 end function get_sort_mass
 
-logical function too_far(dr)
-  double precision, intent(in) :: dr(1:3)
-  if (dr(1)*dr(1) + dr(2)*dr(2) + dr(3)*dr(3) > many_sigma_sqr) then
-    too_far = .TRUE.
-  else
-    too_far = .FALSE.
-  endif
-end function too_far
-
 logical function read_f14_event_header(uread, Elab, ev, tsteps, dt)
   ! Reads UrQMD file 14 header, returns true at success
   ! uread - number of unit to be read
@@ -823,7 +847,7 @@ subroutine get_phist(fname)
          dr(1) = r(1) - ix * dx
          dr(2) = r(2)
          dr(3) = r(3) - iz * dz
-         if (too_far(dr(1:3))) then; cycle; endif
+         if (smearing_factor(dr(1:3), p(0:3), m) < 1.d-9) then; cycle; endif
 
          ! Add particle to momentum histogram
          call GetBoostMatrix(umu(0:3, sort,  it, ix, iz), M_boost)
