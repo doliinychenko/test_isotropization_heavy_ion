@@ -45,6 +45,7 @@ program thermalization
  call cla_register('-nt', 'number of points in time to consider', cla_int, '20')
  call cla_register('-dx', 'grid x step [fm]', cla_float, '1.d0')
  call cla_register('-dz', 'grid z step [fm]', cla_float, '1.d0')
+ call cla_register('-sigma', 'gaussian sigma [fm]', cla_float, '1.d0')
  call cla_validate
  call cla_get('-load_from_saved', load_from_saved)
  call cla_get('-urqmd_input', datafile_alias)
@@ -60,7 +61,7 @@ program thermalization
    call cla_get('-dx', dx)
    call cla_get('-dz', dz)
 
-   gs_sigma = 1.d0
+   call cla_get('-sigma', gs_sigma)
    many_sigma_sqr = 3 * 3 * gs_sigma * gs_sigma
    gauss_denom = 2 * gs_sigma * gs_sigma
    gauss_norm = (2 * pi * gs_sigma * gs_sigma)**(-3./2.)
@@ -81,23 +82,23 @@ program thermalization
    call normalize_to_event_number()
    call get_Landau_Tmn()
 
-   print *,"Reading UrQMD files again to build dN/dp histograms"
-   open(unit = 20, file = 'file_list.txt')
-   read(20,*)total_files
-   print *,"Total files: ", total_files
-   do i_file = 1, total_files
-     read(20,'(A)') particle_file
-     call get_phist(trim(adjustl(particle_file)))
-   end do
-   close(20)
+ !  print *,"Reading UrQMD files again to build dN/dp histograms"
+ !  open(unit = 20, file = 'file_list.txt')
+ !  read(20,*)total_files
+ !  print *,"Total files: ", total_files
+ !  do i_file = 1, total_files
+ !    read(20,'(A)') particle_file
+ !    call get_phist(trim(adjustl(particle_file)))
+ !  end do
+ !  close(20)
 
-   call save_Tmn(trim(adjustl(saveload_file)))
+ !  call save_Tmn(trim(adjustl(saveload_file)))
  else
    call read_Tmn(trim(adjustl(saveload_file)))
    call get_Landau_Tmn()
  endif
 
- call calculate_temperature()
+ !call calculate_temperature()
 
  call print_conserved('conserved_quantities.txt')
 
