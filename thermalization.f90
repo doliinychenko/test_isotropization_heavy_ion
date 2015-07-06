@@ -15,7 +15,7 @@ program thermalization
  integer max_sort
  integer total_ev, total_files
  integer i_file
- character*80 particle_file, datafile_alias, saveload_file
+ character(len=80) particle_file, datafile_alias, saveload_file
  double precision gs_sigma, many_sigma_sqr, gauss_denom, gauss_norm
 
  double precision, dimension(:,:,:,:,:,:), allocatable :: Tmn, TmnL ! mu, nu, sort, t,x,z
@@ -68,6 +68,7 @@ program thermalization
 
    call init_arrays()
    call smearing_factor_test()
+   print *, "Reading data from alias: ", trim(datafile_alias)
    call system('ls '//trim(datafile_alias)//'|wc -l > file_list.txt')
    call system('ls '//trim(datafile_alias)//' >> file_list.txt')
 

@@ -30,7 +30,10 @@
 # output
 Energy=$1
 Centrality=$2
-path="/scratch/hyihp/oliiny/therm_project/urqmd_E${Energy}_b${Centrality}"
+Cell_size='0.6'
+Sigma='0.8'
+Urqmd_input="/scratch/hyihp/oliiny/therm_project/Nev_dep/urqmd_E${Energy}_b${Centrality}_n*/urqmd-3.4/test.f14"
+path="/scratch/hyihp/oliiny/therm_project/ev10000/E${Energy}_b${Centrality}"
 src_files="/home/hyihp/oliiny/therm_project"
 
 # output info
@@ -52,8 +55,10 @@ cd "${path}"
 export OMP_NUM_THREADS=1
 
 # start programm
+my_n_cells=`echo 15/${Cell_size} | bc`
 srun ./thermalization -load_from_saved F \
-                      -urqmd_input "${path}/urqmd-3.4/test.f14" \
-                      -save_load_file "Tmn_saved_E${Energy}_b${Centrality}.bin" \
-                      -nx 15 -nz 15 -nt 75 \
-                      -dx 1.0 -dz 1.0
+                      -urqmd_input "${Urqmd_input}" \
+                      -save_load_file "Tmn_saved_E${Energy}_b${Centrality}_n${N}.bin" \
+                      -nx ${my_n_cells} -nz ${my_n_cells} -nt 75 \
+                      -dx ${Cell_size} -dz ${Cell_size} \
+                      -sigma ${Sigma}
