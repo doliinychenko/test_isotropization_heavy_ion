@@ -12,4 +12,5 @@ justifiably transformed into a coarse-grained ideal hydrodynamic picture. In sim
 "how far is UrQMD from ideal hydrodynamics". Of course, the answer depends on space, time, and many technical
 factors, so see the paper for details --- https://arxiv.org/pdf/1508.04378.
 
-Codewise, this is an old fortran 90 code. To compile just type "make".
+Codewise, this is an old fortran 90 code. To compile just type "make". I don't really expect this code to be useful
+to anybody, but for a sake of reference, conservation, and reproducibility I save it here.
